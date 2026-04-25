@@ -15,6 +15,7 @@ class AnalyticsScreen extends StatelessWidget {
         final analytics = provider.getAnalytics();
         final categories = analytics.topItemCategories;
         final topCategory = categories.isNotEmpty ? categories.first : null;
+        final otherCategories = categories.skip(1).toList();
 
         return Container(
           color: AppColors.bg,
@@ -35,20 +36,24 @@ class AnalyticsScreen extends StatelessWidget {
                         RankingHero(category: topCategory),
                       const SizedBox(height: 32),
                       const AnalyticsSectionHeader(
-                        title: 'Percentiles',
-                        subtitle: 'How your categories compare',
+                        title: 'All rankings',
+                        subtitle: 'Every category found in your receipts',
                       ),
                       const SizedBox(height: 16),
                       if (categories.isEmpty)
-                        const AnalyticsEmptyText('No percentile data yet.')
-                      else
-                        ...categories.map(
-                          (category) => PercentileCard(category: category),
-                        ),
+                        const AnalyticsEmptyText('No ranking data yet.')
+                      else ...[
+                        if (otherCategories.isEmpty)
+                          AnalyticsSingleCategoryCard(category: topCategory!)
+                        else
+                          ...otherCategories.map(
+                            (category) => PercentileCard(category: category),
+                          ),
+                      ],
                       const SizedBox(height: 32),
                       const AnalyticsSectionHeader(
                         title: 'Spend mix',
-                        subtitle: 'Share of tracked spending',
+                        subtitle: 'Share of your tracked spending',
                       ),
                       const SizedBox(height: 16),
                       if (categories.isEmpty)
@@ -86,7 +91,7 @@ class AnalyticsHeader extends StatelessWidget {
         ),
         SizedBox(height: 6),
         Text(
-          'Your spending, ranked clearly.',
+          'Percentiles and spending patterns.',
           style: TextStyle(color: AppColors.muted, fontSize: 16, height: 1.35),
         ),
       ],
@@ -101,10 +106,8 @@ class RankingHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visual = analyticsCategoryVisual(
-      category.itemCategory,
-      category.percentile,
-    );
+    final color = analyticsCategoryColor(category.itemCategory);
+    final icon = categoryIcon(category.itemCategory);
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -124,7 +127,7 @@ class RankingHero extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Highest rank',
+            'Highest percentile',
             style: TextStyle(
               color: AppColors.muted,
               fontSize: 15,
@@ -149,8 +152,8 @@ class RankingHero extends StatelessWidget {
             children: [
               BigRankRing(
                 value: category.percentile / 100,
-                color: visual.color,
-                icon: visual.icon,
+                color: color,
+                icon: icon,
               ),
               const SizedBox(width: 22),
               Expanded(
@@ -175,15 +178,15 @@ class RankingHero extends StatelessWidget {
                     Text(
                       analyticsRankLabel(category.percentile),
                       style: TextStyle(
-                        color: visual.color,
+                        color: color,
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Text(
-                      'Compared with other users.',
-                      style: TextStyle(
+                    Text(
+                      '€${category.amount.toStringAsFixed(2)} tracked',
+                      style: const TextStyle(
                         color: AppColors.muted,
                         fontSize: 15,
                         height: 1.35,
@@ -249,6 +252,28 @@ class BigRankRing extends StatelessWidget {
   }
 }
 
+class AnalyticsSingleCategoryCard extends StatelessWidget {
+  final ItemCategorySpending category;
+
+  const AnalyticsSingleCategoryCard({super.key, required this.category});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Text(
+        'Only one category found so far. Scan more receipts to compare more topics.',
+        style: TextStyle(color: AppColors.muted, fontSize: 15, height: 1.4),
+      ),
+    );
+  }
+}
+
 class PercentileCard extends StatelessWidget {
   final ItemCategorySpending category;
 
@@ -256,10 +281,8 @@ class PercentileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final visual = analyticsCategoryVisual(
-      category.itemCategory,
-      category.percentile,
-    );
+    final color = analyticsCategoryColor(category.itemCategory);
+    final icon = categoryIcon(category.itemCategory);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -273,7 +296,7 @@ class PercentileCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              AnalyticsIconBadge(icon: visual.icon, color: visual.color),
+              AnalyticsIconBadge(icon: icon, color: color),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
@@ -310,7 +333,7 @@ class PercentileCard extends StatelessWidget {
                   value: value,
                   minHeight: 9,
                   backgroundColor: AppColors.surfaceSoft,
-                  color: visual.color,
+                  color: color,
                 ),
               );
             },
@@ -321,7 +344,7 @@ class PercentileCard extends StatelessWidget {
               Text(
                 analyticsRankLabel(category.percentile),
                 style: TextStyle(
-                  color: visual.color,
+                  color: color,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
@@ -334,6 +357,87 @@ class PercentileCard extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class SpendMix extends StatelessWidget {
+  final SpendingAnalytics analytics;
+
+  const SpendMix({super.key, required this.analytics});
+
+  @override
+  Widget build(BuildContext context) {
+    final categories = analytics.topItemCategories;
+    final total = analytics.totalSpending <= 0 ? 1.0 : analytics.totalSpending;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: categories.map((category) {
+          final color = analyticsCategoryColor(category.itemCategory);
+          final share = category.amount / total;
+          final safeShare = share < 0
+              ? 0.0
+              : share > 1
+              ? 1.0
+              : share;
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 18),
+            child: Row(
+              children: [
+                AnalyticsIconBadge(
+                  icon: categoryIcon(category.itemCategory),
+                  color: color,
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 88,
+                  child: Text(
+                    category.itemCategory,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(99),
+                    child: LinearProgressIndicator(
+                      value: safeShare,
+                      minHeight: 9,
+                      backgroundColor: AppColors.surfaceSoft,
+                      color: color,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    '${(share * 100).toStringAsFixed(0)}%',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -359,88 +463,6 @@ class AnalyticsIconBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
       ),
       child: Icon(icon, color: color, size: 23),
-    );
-  }
-}
-
-class SpendMix extends StatelessWidget {
-  final SpendingAnalytics analytics;
-
-  const SpendMix({super.key, required this.analytics});
-
-  @override
-  Widget build(BuildContext context) {
-    final categories = analytics.topItemCategories.take(5).toList();
-    final total = analytics.totalSpending <= 0 ? 1.0 : analytics.totalSpending;
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        children: categories.map((category) {
-          final visual = analyticsCategoryVisual(
-            category.itemCategory,
-            category.percentile,
-          );
-
-          final share = category.amount / total;
-          final safeShare = share < 0
-              ? 0.0
-              : share > 1
-              ? 1.0
-              : share;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 18),
-            child: Row(
-              children: [
-                AnalyticsIconBadge(icon: visual.icon, color: visual.color),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 96,
-                  child: Text(
-                    category.itemCategory,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppColors.text,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(99),
-                    child: LinearProgressIndicator(
-                      value: safeShare,
-                      minHeight: 9,
-                      backgroundColor: AppColors.surfaceSoft,
-                      color: visual.color,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 42,
-                  child: Text(
-                    '${(share * 100).toStringAsFixed(0)}%',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: AppColors.muted,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
     );
   }
 }
@@ -539,519 +561,47 @@ class AnalyticsEmptyText extends StatelessWidget {
   }
 }
 
-class AnalyticsCategoryVisual {
-  final IconData icon;
-  final Color color;
+Color analyticsCategoryColor(String category) {
+  final name = category.toLowerCase();
 
-  const AnalyticsCategoryVisual({required this.icon, required this.color});
-}
-
-AnalyticsCategoryVisual analyticsCategoryVisual(
-  String category,
-  double percentile,
-) {
-  final name = category.toLowerCase().trim();
-
-  if (hasAny(name, [
-    'coffee',
-    'latte',
-    'cappuccino',
-    'espresso',
-    'americano',
-    'mocha',
-    'macchiato',
-    'prepared coffee',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.local_cafe_outlined,
-      color: AppColors.amber,
-    );
+  if (name.contains('coffee') ||
+      name.contains('tea') ||
+      name.contains('bakery') ||
+      name.contains('grains')) {
+    return AppColors.amber;
   }
 
-  if (hasAny(name, ['tea', 'chai', 'matcha', 'iced tea'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.emoji_food_beverage_outlined,
-      color: AppColors.green,
-    );
+  if (name.contains('fruit') ||
+      name.contains('vegetable') ||
+      name.contains('pets') ||
+      name.contains('health')) {
+    return AppColors.green;
   }
 
-  if (hasAny(name, [
-    'water',
-    'juice',
-    'soda',
-    'drink',
-    'beverage',
-    'cola',
-    'smoothie',
-    'energy drink',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.local_drink_outlined,
-      color: AppColors.aqua,
-    );
+  if (name.contains('meat') ||
+      name.contains('poultry') ||
+      name.contains('ready meals') ||
+      name.contains('snacks') ||
+      name.contains('alcohol') ||
+      name.contains('nicotine')) {
+    return AppColors.rose;
   }
 
-  if (hasAny(name, ['beer', 'wine', 'alcohol', 'cocktail'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.wine_bar_outlined,
-      color: AppColors.rose,
-    );
+  if (name.contains('fish') ||
+      name.contains('dairy') ||
+      name.contains('drinks') ||
+      name.contains('household') ||
+      name.contains('personal care')) {
+    return AppColors.aqua;
   }
 
-  if (hasAny(name, [
-    'pet',
-    'dog',
-    'cat',
-    'animal',
-    'pet food',
-    'cat food',
-    'dog food',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.pets_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'beef',
-    'steak',
-    'meat',
-    'minced meat',
-    'pork',
-    'bacon',
-    'sausage',
-    'ham',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.dinner_dining_outlined,
-      color: AppColors.rose,
-    );
-  }
-
-  if (hasAny(name, ['chicken', 'chicken breast', 'turkey', 'poultry'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.lunch_dining_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, ['fish', 'salmon', 'tuna', 'seafood', 'shrimp', 'prawn'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.set_meal_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, ['egg', 'eggs'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.egg_alt_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, ['milk', 'yogurt', 'cheese', 'dairy', 'cream', 'butter'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.icecream_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, [
-    'bread',
-    'bakery',
-    'croissant',
-    'bagel',
-    'bun',
-    'toast',
-    'pastry',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.bakery_dining_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, [
-    'pasta',
-    'spaghetti',
-    'noodle',
-    'ramen',
-    'rice',
-    'grain',
-    'cereal',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.ramen_dining_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, [
-    'fruit',
-    'apple',
-    'banana',
-    'orange',
-    'berries',
-    'grape',
-    'mango',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.apple_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'vegetable',
-    'vegetables',
-    'salad',
-    'lettuce',
-    'tomato',
-    'cucumber',
-    'carrot',
-    'greens',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.eco_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'snack',
-    'chips',
-    'crisps',
-    'candy',
-    'chocolate',
-    'cookie',
-    'cookies',
-    'sweets',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.cookie_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, ['frozen', 'ice cream', 'frozen food'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.ac_unit_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, [
-    'grocery',
-    'groceries',
-    'supermarket',
-    'market',
-    'food shopping',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.shopping_basket_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'restaurant',
-    'dinner',
-    'lunch',
-    'takeout',
-    'delivery',
-    'fast food',
-    'meal',
-    'food',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.restaurant_outlined,
-      color: AppColors.rose,
-    );
-  }
-
-  if (hasAny(name, [
-    'transport',
-    'train',
-    'bus',
-    'metro',
-    'tram',
-    'uber',
-    'taxi',
-    'ride',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.directions_transit_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, [
-    'fuel',
-    'gas',
-    'petrol',
-    'diesel',
-    'parking',
-    'car wash',
-    'car',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.local_gas_station_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, ['bike', 'bicycle', 'scooter'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.pedal_bike_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, [
-    'subscription',
-    'phone',
-    'mobile',
-    'app',
-    'software',
-    'cloud',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.phone_iphone_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, ['music', 'spotify', 'audio', 'playlist'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.music_note_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'movie',
-    'netflix',
-    'cinema',
-    'entertainment',
-    'streaming',
-    'youtube',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.movie_outlined,
-      color: AppColors.rose,
-    );
-  }
-
-  if (hasAny(name, ['game', 'gaming', 'playstation', 'xbox', 'nintendo'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.sports_esports_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, ['book', 'books', 'reading', 'magazine', 'education'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.menu_book_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, [
-    'health',
-    'pharmacy',
-    'medicine',
-    'medical',
-    'doctor',
-    'care',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.local_pharmacy_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, ['gym', 'sport', 'fitness', 'workout', 'training'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.fitness_center_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, [
-    'clothes',
-    'clothing',
-    'fashion',
-    'shoes',
-    'shirt',
-    'jacket',
-    'pants',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.checkroom_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, [
-    'beauty',
-    'cosmetic',
-    'makeup',
-    'skincare',
-    'hair',
-    'perfume',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.spa_outlined,
-      color: AppColors.rose,
-    );
-  }
-
-  if (hasAny(name, [
-    'home',
-    'furniture',
-    'cleaning',
-    'kitchen',
-    'household',
-    'decor',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.home_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, ['gift', 'present', 'birthday'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.card_giftcard_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, [
-    'travel',
-    'hotel',
-    'flight',
-    'airport',
-    'holiday',
-    'vacation',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.flight_takeoff_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, [
-    'electronics',
-    'tech',
-    'laptop',
-    'computer',
-    'headphones',
-    'charger',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.devices_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  if (hasAny(name, ['rent', 'mortgage', 'housing'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.apartment_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, [
-    'bill',
-    'utilities',
-    'electricity',
-    'water bill',
-    'internet',
-    'wifi',
-  ])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.receipt_outlined,
-      color: AppColors.amber,
-    );
-  }
-
-  if (hasAny(name, ['insurance', 'bank', 'fee', 'finance', 'payment'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.account_balance_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (hasAny(name, ['baby', 'kids', 'children', 'toys'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.toys_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (hasAny(name, ['office', 'work', 'stationery', 'paper', 'pen'])) {
-    return const AnalyticsCategoryVisual(
-      icon: Icons.work_outline,
-      color: AppColors.aqua,
-    );
-  }
-
-  return fallbackCategoryVisual(name, percentile);
-}
-
-bool hasAny(String text, List<String> words) {
-  for (final word in words) {
-    if (text.contains(word)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-AnalyticsCategoryVisual fallbackCategoryVisual(
-  String category,
-  double percentile,
-) {
-  final fallbackIcons = [
-    Icons.shopping_bag_outlined,
-    Icons.sell_outlined,
-    Icons.inventory_2_outlined,
-    Icons.widgets_outlined,
-    Icons.local_offer_outlined,
-    Icons.category_outlined,
-    Icons.star_border_rounded,
-    Icons.bubble_chart_outlined,
-    Icons.pie_chart_outline_rounded,
-    Icons.auto_graph_outlined,
-  ];
-
-  final fallbackColors = [
-    AppColors.primary,
-    AppColors.aqua,
-    AppColors.amber,
-    AppColors.green,
-    AppColors.rose,
-  ];
-
-  final hash = category.codeUnits.fold<int>(0, (sum, code) => sum + code);
-
-  return AnalyticsCategoryVisual(
-    icon: fallbackIcons[hash % fallbackIcons.length],
-    color: fallbackColors[hash % fallbackColors.length],
-  );
-}
-
-Color analyticsRankColor(double percentile) {
-  if (percentile >= 90) return AppColors.rose;
-  if (percentile >= 70) return AppColors.amber;
-  return AppColors.green;
+  return AppColors.primary;
 }
 
 String analyticsRankLabel(double percentile) {
   if (percentile >= 95) return 'Top spender';
   if (percentile >= 80) return 'High';
   if (percentile >= 50) return 'Above average';
+
   return 'Low';
 }

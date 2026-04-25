@@ -10,46 +10,56 @@ class ReceiptListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<ReceiptProvider>();
-    final receipts = provider.receipts.map(_toReceiptData).toList();
+    return Consumer<ReceiptProvider>(
+      builder: (context, provider, child) {
+        final receipts = provider.receipts;
 
-    return Container(
-      color: AppColors.bg,
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 104),
-        children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 520),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const ReceiptHeader(),
-                  const SizedBox(height: 24),
-                  ActionPanel(
-                    onScan: () =>
-                        showMessage(context, 'Camera scanning coming soon.'),
-                    onUpload: () => showMessage(context, 'Upload coming soon.'),
+        return Container(
+          color: AppColors.bg,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 104),
+            children: [
+              Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const ReceiptHeader(),
+                      const SizedBox(height: 24),
+                      ReceiptActionPanel(
+                        onScan: () {
+                          showMessage(context, 'Camera scanning coming soon.');
+                        },
+                        onUpload: () {
+                          showMessage(context, 'Upload coming soon.');
+                        },
+                      ),
+                      const SizedBox(height: 32),
+                      const ReceiptSectionHeader(
+                        title: 'Receipt history',
+                        subtitle: 'Stored receipts you can open later',
+                      ),
+                      const SizedBox(height: 16),
+                      if (receipts.isEmpty)
+                        const EmptyReceiptHistory()
+                      else
+                        ...receipts.map(
+                          (receipt) => ReceiptRow(
+                            receipt: receipt,
+                            onTap: () {
+                              showReceiptDetails(context, receipt);
+                            },
+                          ),
+                        ),
+                    ],
                   ),
-                  const SizedBox(height: 32),
-                  const ReceiptSectionHeader(
-                    title: 'Recent',
-                    subtitle: 'Latest scanned receipts',
-                  ),
-                  const SizedBox(height: 16),
-                  if (receipts.isEmpty)
-                    const Text(
-                      'No receipts yet.',
-                      style: TextStyle(color: AppColors.muted, fontSize: 15),
-                    )
-                  else
-                    ...receipts.map((receipt) => ReceiptRow(receipt: receipt)),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -105,6 +115,21 @@ class ReceiptListScreen extends StatelessWidget {
   void showMessage(BuildContext context, String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
+
+  void showReceiptDetails(BuildContext context, Receipt receipt) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      barrierColor: Colors.black.withOpacity(0.55),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        return ReceiptDetailSheet(receipt: receipt);
+      },
+    );
+  }
 }
 
 class ReceiptHeader extends StatelessWidget {
@@ -126,7 +151,7 @@ class ReceiptHeader extends StatelessWidget {
         ),
         SizedBox(height: 6),
         Text(
-          'Scan purchases into insights.',
+          'Scan, store and revisit purchases.',
           style: TextStyle(color: AppColors.muted, fontSize: 16, height: 1.35),
         ),
       ],
@@ -134,11 +159,15 @@ class ReceiptHeader extends StatelessWidget {
   }
 }
 
-class ActionPanel extends StatelessWidget {
+class ReceiptActionPanel extends StatelessWidget {
   final VoidCallback onScan;
   final VoidCallback onUpload;
 
-  const ActionPanel({super.key, required this.onScan, required this.onUpload});
+  const ReceiptActionPanel({
+    super.key,
+    required this.onScan,
+    required this.onUpload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -159,10 +188,9 @@ class ActionPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.document_scanner_outlined,
+          const ReceiptIconBadge(
+            icon: Icons.document_scanner_outlined,
             color: AppColors.aqua,
-            size: 36,
           ),
           const SizedBox(height: 20),
           const Text(
@@ -176,7 +204,7 @@ class ActionPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'Extract items and update your ranking.',
+            'Extract items and save the receipt to history.',
             style: TextStyle(color: AppColors.muted, fontSize: 16, height: 1.4),
           ),
           const SizedBox(height: 22),
@@ -229,45 +257,299 @@ class ActionPanel extends StatelessWidget {
 }
 
 class ReceiptRow extends StatelessWidget {
-  final ReceiptData receipt;
+  final Receipt receipt;
+  final VoidCallback onTap;
 
-  const ReceiptRow({super.key, required this.receipt});
+  const ReceiptRow({super.key, required this.receipt, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final color = categoryColor(receipt.category);
+    final mainCategory = receipt.mainCategory;
+    final color = receiptCategoryColor(mainCategory);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              children: [
+                ReceiptIconBadge(
+                  icon: categoryIcon(mainCategory),
+                  color: color,
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        receipt.merchant,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.text,
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '$mainCategory · ${receipt.itemCount} items · ${receipt.formattedDate}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.muted,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '€${receipt.totalAmount.toStringAsFixed(2)}',
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.faint,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ReceiptDetailSheet extends StatelessWidget {
+  final Receipt receipt;
+
+  const ReceiptDetailSheet({super.key, required this.receipt});
+
+  @override
+  Widget build(BuildContext context) {
+    final mainCategory = receipt.mainCategory;
+    final color = receiptCategoryColor(mainCategory);
+
+    return SafeArea(
+      child: FractionallySizedBox(
+        heightFactor: 0.86,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: AppColors.faint,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  ReceiptIconBadge(
+                    icon: categoryIcon(mainCategory),
+                    color: color,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      receipt.merchant,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.text,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: -0.8,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${receipt.formattedDate} · ${receipt.itemCount} items',
+                style: const TextStyle(color: AppColors.muted, fontSize: 16),
+              ),
+              const SizedBox(height: 24),
+              ReceiptSummaryCard(receipt: receipt),
+              const SizedBox(height: 28),
+              const ReceiptSectionHeader(
+                title: 'Extracted items',
+                subtitle: 'Products saved from this receipt',
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  children: receipt.items.map((item) {
+                    return ReceiptItemRow(item: item);
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ReceiptSummaryCard extends StatelessWidget {
+  final Receipt receipt;
+
+  const ReceiptSummaryCard({super.key, required this.receipt});
+
+  @override
+  Widget build(BuildContext context) {
+    final mainCategory = receipt.mainCategory;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceSoft,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+      ),
       child: Row(
         children: [
-          Container(
-            height: 54,
-            width: 54,
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.14),
-              borderRadius: BorderRadius.circular(19),
+          Expanded(
+            child: ReceiptSummaryValue(
+              label: 'Total',
+              value: '€${receipt.totalAmount.toStringAsFixed(2)}',
+              icon: Icons.payments_outlined,
+              color: AppColors.primary,
             ),
-            child: Icon(receipt.icon, color: color, size: 27),
           ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ReceiptSummaryValue(
+              label: 'Category',
+              value: mainCategory,
+              icon: categoryIcon(mainCategory),
+              color: receiptCategoryColor(mainCategory),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ReceiptSummaryValue extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  const ReceiptSummaryValue({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ReceiptIconBadge(icon: icon, color: color),
+        const SizedBox(height: 12),
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.muted, fontSize: 13),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.text,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class ReceiptItemRow extends StatelessWidget {
+  final ReceiptItem item;
+
+  const ReceiptItemRow({super.key, required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final displayCategory = categoryDisplayName(item.category);
+    final color = receiptCategoryColor(displayCategory);
+    final quantityText = item.quantity % 1 == 0
+        ? item.quantity.toStringAsFixed(0)
+        : item.quantity.toStringAsFixed(1);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Row(
+        children: [
+          ReceiptIconBadge(icon: categoryIcon(displayCategory), color: color),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  receipt.merchant,
+                  item.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.text,
-                    fontSize: 17,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  '${receipt.category} · ${receipt.itemCount} items · ${receipt.date}',
+                  '$displayCategory · $quantityText × €${item.unitPrice.toStringAsFixed(2)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: AppColors.muted, fontSize: 14),
@@ -277,15 +559,35 @@ class ReceiptRow extends StatelessWidget {
           ),
           const SizedBox(width: 14),
           Text(
-            '€${receipt.amount.toStringAsFixed(2)}',
+            '€${item.totalPrice.toStringAsFixed(2)}',
             style: const TextStyle(
               color: AppColors.text,
-              fontSize: 16,
+              fontSize: 15,
               fontWeight: FontWeight.bold,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class ReceiptIconBadge extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const ReceiptIconBadge({super.key, required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      width: 48,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Icon(icon, color: color, size: 24),
     );
   }
 }
@@ -324,40 +626,74 @@ class ReceiptSectionHeader extends StatelessWidget {
   }
 }
 
-class ReceiptData {
-  final String merchant;
-  final String category;
-  final double amount;
-  final String date;
-  final int itemCount;
-  final IconData icon;
+class EmptyReceiptHistory extends StatelessWidget {
+  const EmptyReceiptHistory({super.key});
 
-  const ReceiptData({
-    required this.merchant,
-    required this.category,
-    required this.amount,
-    required this.date,
-    required this.itemCount,
-    required this.icon,
-  });
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Row(
+        children: [
+          ReceiptIconBadge(
+            icon: Icons.receipt_long_outlined,
+            color: AppColors.aqua,
+          ),
+          SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              'No receipts yet. Scan one to start your history.',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: 15,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-Color categoryColor(String category) {
-  if (category.toLowerCase() == 'coffee') {
+Color receiptCategoryColor(String category) {
+  final name = category.toLowerCase();
+
+  if (name.contains('coffee') ||
+      name.contains('tea') ||
+      name.contains('bakery') ||
+      name.contains('grains')) {
     return AppColors.amber;
   }
 
-  if (category.toLowerCase() == 'groceries') {
+  if (name.contains('fruit') ||
+      name.contains('vegetable') ||
+      name.contains('pets') ||
+      name.contains('health')) {
     return AppColors.green;
   }
 
-  if (category.toLowerCase() == 'restaurants') {
+  if (name.contains('meat') ||
+      name.contains('poultry') ||
+      name.contains('ready meals') ||
+      name.contains('snacks') ||
+      name.contains('alcohol') ||
+      name.contains('nicotine')) {
     return AppColors.rose;
   }
 
-  if (category.toLowerCase() == 'transport') {
-    return AppColors.primary;
+  if (name.contains('fish') ||
+      name.contains('dairy') ||
+      name.contains('drinks') ||
+      name.contains('household') ||
+      name.contains('personal care')) {
+    return AppColors.aqua;
   }
 
-  return AppColors.aqua;
+  return AppColors.primary;
 }

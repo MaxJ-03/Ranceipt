@@ -1,232 +1,444 @@
-class Receipt {
-  final String id;
-  final String storeName;
-  final DateTime date;
-  final double total;
-  final List<ReceiptLineItem> lineItems;
-  final String? imagePath;
-  final bool isProcessed;
+import 'package:flutter/material.dart';
 
-  Receipt({
-    required this.id,
-    required this.storeName,
-    required this.date,
-    required this.total,
-    required this.lineItems,
-    this.imagePath,
-    this.isProcessed = false,
-  });
+class Receipt {
+final String id;
+final String merchant;
+final DateTime date;
+final String currency;
+final List<ReceiptItem> items;
+final String? transactionId;
+
+const Receipt({
+required this.id,
+required this.merchant,
+required this.date,
+required this.currency,
+required this.items,
+this.transactionId,
+});
+
+double get totalAmount {
+return items.fold<double>(
+0,
+(sum, item) => sum + item.totalPrice,
+);
 }
 
-class ReceiptLineItem {
-  final String id;
-  final String name;
-  final String? detailedCategory; // e.g., "Milk", "Eggs", "Bread"
-  final double price;
-  final int quantity;
-  final bool isCategorized;
+int get itemCount {
+return items.fold<int>(
+0,
+(sum, item) => sum + item.quantity.round(),
+);
+}
 
-  ReceiptLineItem({
-    required this.id,
-    required this.name,
-    this.detailedCategory,
-    required this.price,
-    required this.quantity,
-    this.isCategorized = false,
-  });
+String get formattedDate {
+final now = DateTime.now();
+final days = now.difference(date).inDays;
 
-  double get subtotal => price * quantity;
+if (days == 0) return 'Today';
+if (days == 1) return 'Yesterday';
+
+return '$days days ago';
+
+}
+
+String get mainCategory {
+if (items.isEmpty) return 'Other';
+
+final totals = <String, double>{};
+
+for (final item in items) {
+  final category = categoryDisplayName(item.category);
+  totals[category] = (totals[category] ?? 0) + item.totalPrice;
+}
+
+final sorted = totals.entries.toList()
+  ..sort((a, b) => b.value.compareTo(a.value));
+
+return sorted.first.key;
+
+}
+}
+
+class ReceiptItem {
+final String id;
+final String name;
+final String category;
+final double quantity;
+final double unitPrice;
+
+const ReceiptItem({
+required this.id,
+required this.name,
+required this.category,
+required this.quantity,
+required this.unitPrice,
+});
+
+double get totalPrice {
+return quantity * unitPrice;
+}
+}
+
+class PersonalGoal {
+final String id;
+final double amountToSave;
+final String currency;
+final DateTime targetDate;
+final DateTime createdAt;
+
+const PersonalGoal({
+required this.id,
+required this.amountToSave,
+required this.currency,
+required this.targetDate,
+required this.createdAt,
+});
+
+int get daysLeft {
+final days = targetDate.difference(DateTime.now()).inDays;
+
+if (days < 0) return 0;
+
+return days;
+
+}
 }
 
 class ItemCategorySpending {
-  final String itemCategory; // e.g., "Milk", "Eggs"
-  final double amount;
-  final int transactionCount;
-  final double percentile; // 0-100
-  final String percentileText;
-  final double percentileRank; // How much user spends more than others
+final String itemCategory;
+final double amount;
+final int transactionCount;
+final double percentile;
 
-  ItemCategorySpending({
-    required this.itemCategory,
-    required this.amount,
-    required this.transactionCount,
-    required this.percentile,
-    required this.percentileText,
-    required this.percentileRank,
-  });
+const ItemCategorySpending({
+required this.itemCategory,
+required this.amount,
+required this.transactionCount,
+required this.percentile,
+});
+
+String get percentileText {
+return 'More than ${percentile.toStringAsFixed(1)}% of users';
+}
 }
 
 class SpendingAnalytics {
-  final double totalSpending;
-  final double averageTransaction;
-  final int transactionCount;
-  final Map<String, double> itemCategoryBreakdown; // Detailed items
-  final List<ItemCategorySpending> topItemCategories;
-  final List<DailySpending> dailyTrend;
-  final Map<String, int> categoryFrequency; // How often items are bought
+final double totalSpending;
+final int transactionCount;
+final List<ItemCategorySpending> topItemCategories;
+final List<Receipt> receipts;
+final List<PersonalGoal> personalGoals;
+final String aiAdvice;
 
-  SpendingAnalytics({
-    required this.totalSpending,
-    required this.averageTransaction,
-    required this.transactionCount,
-    required this.itemCategoryBreakdown,
-    required this.topItemCategories,
-    required this.dailyTrend,
-    required this.categoryFrequency,
-  });
+const SpendingAnalytics({
+required this.totalSpending,
+required this.transactionCount,
+required this.topItemCategories,
+required this.receipts,
+required this.personalGoals,
+required this.aiAdvice,
+});
+
+PersonalGoal? get activeGoal {
+if (personalGoals.isEmpty) return null;
+
+final sorted = [...personalGoals]
+  ..sort((a, b) => a.targetDate.compareTo(b.targetDate));
+
+return sorted.first;
+
+}
 }
 
-class DailySpending {
-  final DateTime date;
-  final double amount;
+String categoryDisplayName(String category) {
+final name = category.toLowerCase().trim();
 
-  DailySpending({required this.date, required this.amount});
+if (containsAny(name, [
+'prepared coffee',
+'coffee',
+'latte',
+'cappuccino',
+'espresso',
+'americano',
+'mocha',
+])) {
+return 'Coffee';
 }
 
-// Global category list for reference
-const List<String> DETAILED_ITEM_CATEGORIES = [
-  // Bread & Baked Goods
-  'Bread', 'Pastries', 'Cakes',
-  // Dairy & Alternatives
-  'Eggs',
-  'Milk',
-  'Plant-based milk',
-  'Butter',
-  'Cheese',
-  'Soft cheese and spreads',
-  'Yogurt',
-  'Cream',
-  // Meat & Protein
-  'Chicken breast',
-  'Chicken thighs',
-  'Beef',
-  'Pork',
-  'Lamb',
-  'Turkey',
-  'Deli meat',
-  'Sausages',
-  'Bacon',
-  'Fish',
-  'Seafood',
-  // Grains & Carbs
-  'Rice', 'Pasta', 'Noodles', 'Flour', 'Sugar', 'Oats', 'Cereal', 'Granola',
-  // Legumes & Nuts
-  'Beans', 'Lentils', 'Chickpeas', 'Nuts', 'Seeds', 'Dried fruit',
-  // Fresh Fruit
-  'Apples',
-  'Bananas',
-  'Oranges',
-  'Lemons and limes',
-  'Grapes',
-  'Berries',
-  'Melons',
-  'Stone fruit',
-  'Tropical fruit',
-  'Avocados',
-  // Fresh Vegetables
-  'Potatoes',
-  'Sweet potatoes',
-  'Onions',
-  'Garlic',
-  'Carrots',
-  'Tomatoes',
-  'Cucumbers',
-  'Lettuce',
-  'Spinach',
-  'Broccoli',
-  'Cauliflower',
-  'Peppers',
-  'Mushrooms',
-  'Zucchini',
-  'Eggplant',
-  'Cabbage',
-  'Leeks',
-  'Asparagus',
-  'Fresh herbs',
-  // Frozen & Canned
-  'Frozen vegetables',
-  'Frozen fruit',
-  'Canned vegetables',
-  'Canned fruit',
-  'Canned fish',
-  'Canned meat',
-  // Prepared Foods
-  'Soup', 'Pizza', 'Prepared meals', 'Sandwiches', 'Salads',
-  // Condiments & Cooking
-  'Sauces',
-  'Condiments',
-  'Cooking oil',
-  'Vinegar',
-  'Salt',
-  'Spices',
-  'Stock',
-  'Baking ingredients',
-  // Sweets & Snacks
-  'Chocolate',
-  'Candy',
-  'Packaged snacks',
-  'Ice cream',
-  'Desserts',
-  'Gum and mints',
-  // Beverages
-  'Coffee for home',
-  'Prepared coffee drinks',
-  'Tea',
-  'Bottled water',
-  'Sparkling water',
-  'Juice',
-  'Smoothies',
-  'Soft drinks',
-  'Energy drinks',
-  'Sports drinks',
-  // Alcohol
-  'Beer',
-  'Wine',
-  'Sparkling wine',
-  'Cider',
-  'Spirits',
-  'Ready-to-drink alcoholic drinks',
-  'Non-alcoholic beer and wine',
-  // Tobacco
-  'Cigarettes',
-  'Rolling tobacco',
-  'Vapes',
-  'Nicotine pouches',
-  'Smoking accessories',
-  // Personal Care
-  'Shampoo',
-  'Conditioner',
-  'Body wash',
-  'Soap',
-  'Toothpaste',
-  'Toothbrushes',
-  'Deodorant',
-  'Skincare',
-  'Hair styling products',
-  'Razors',
-  'Shaving products',
-  'Feminine care',
-  'Condoms',
-  // Household & Cleaning
-  'Toilet paper',
-  'Paper towels',
-  'Tissues',
-  'Laundry detergent',
-  'Fabric softener',
-  'Dish soap',
-  'Dishwasher products',
-  'Surface cleaner',
-  'Bathroom cleaner',
-  'Trash bags',
-  'Foil and food wrap',
-  'Food storage bags',
-  // Other
-  'Batteries',
-  'Light bulbs',
-  'Baby products',
-  'Pet food',
-  'Pet products',
-  'Over-the-counter medicine',
-  'Vitamins',
-  'First aid products',
-];
+if (containsAny(name, ['tea', 'chai', 'matcha'])) {
+return 'Tea';
+}
+
+if (containsAny(name, [
+'beef',
+'pork',
+'lamb',
+'bacon',
+'sausage',
+'deli meat',
+'ham',
+'meat',
+])) {
+return 'Meat';
+}
+
+if (containsAny(name, ['chicken', 'turkey', 'poultry'])) {
+return 'Poultry';
+}
+
+if (containsAny(name, ['fish', 'seafood', 'salmon', 'tuna', 'shrimp'])) {
+return 'Fish & seafood';
+}
+
+if (containsAny(name, [
+'milk',
+'plant-based milk',
+'cheese',
+'yogurt',
+'butter',
+'cream',
+'dairy',
+])) {
+return 'Dairy';
+}
+
+if (containsAny(name, [
+'bread',
+'pastries',
+'pastry',
+'cake',
+'cakes',
+'bakery',
+'croissant',
+])) {
+return 'Bakery';
+}
+
+if (containsAny(name, [
+'rice',
+'pasta',
+'noodle',
+'noodles',
+'flour',
+'oats',
+'cereal',
+'granola',
+'grains',
+])) {
+return 'Grains';
+}
+
+if (containsAny(name, [
+'apple',
+'apples',
+'banana',
+'bananas',
+'orange',
+'oranges',
+'fruit',
+'berries',
+'grapes',
+'melon',
+'avocado',
+])) {
+return 'Fruit';
+}
+
+if (containsAny(name, [
+'vegetable',
+'vegetables',
+'potato',
+'potatoes',
+'onion',
+'onions',
+'garlic',
+'carrot',
+'carrots',
+'tomato',
+'tomatoes',
+'lettuce',
+'spinach',
+'broccoli',
+'cauliflower',
+'pepper',
+'peppers',
+'mushroom',
+'mushrooms',
+'zucchini',
+'eggplant',
+'cabbage',
+'leeks',
+'asparagus',
+'herbs',
+])) {
+return 'Vegetables';
+}
+
+if (containsAny(name, [
+'chocolate',
+'candy',
+'snack',
+'snacks',
+'packaged snacks',
+'dessert',
+'desserts',
+'ice cream',
+'gum',
+'mints',
+])) {
+return 'Snacks';
+}
+
+if (containsAny(name, [
+'water',
+'sparkling water',
+'juice',
+'smoothie',
+'smoothies',
+'soft drink',
+'soft drinks',
+'energy drink',
+'sports drink',
+'drink',
+'drinks',
+])) {
+return 'Drinks';
+}
+
+if (containsAny(name, [
+'beer',
+'wine',
+'cider',
+'spirits',
+'alcohol',
+'sparkling wine',
+])) {
+return 'Alcohol';
+}
+
+if (containsAny(name, [
+'shampoo',
+'conditioner',
+'body wash',
+'soap',
+'toothpaste',
+'toothbrush',
+'deodorant',
+'skincare',
+'razor',
+'shaving',
+'feminine care',
+'personal care',
+])) {
+return 'Personal care';
+}
+
+if (containsAny(name, [
+'toilet paper',
+'paper towels',
+'tissues',
+'laundry detergent',
+'fabric softener',
+'dish soap',
+'dishwasher',
+'surface cleaner',
+'bathroom cleaner',
+'trash bags',
+'foil',
+'food wrap',
+'storage bags',
+'batteries',
+'light bulbs',
+'household',
+])) {
+return 'Household';
+}
+
+if (containsAny(name, ['pet', 'dog', 'cat', 'animal'])) {
+return 'Pets';
+}
+
+if (containsAny(name, [
+'medicine',
+'vitamins',
+'first aid',
+'pharmacy',
+'health',
+])) {
+return 'Health';
+}
+
+if (containsAny(name, [
+'prepared meals',
+'prepared meal',
+'pizza',
+'sandwich',
+'sandwiches',
+'salad',
+'salads',
+'soup',
+'ready meal',
+'ready meals',
+])) {
+return 'Ready meals';
+}
+
+if (containsAny(name, [
+'cigarettes',
+'tobacco',
+'vapes',
+'nicotine',
+'smoking',
+])) {
+return 'Nicotine';
+}
+
+if (containsAny(name, [
+'baby',
+'condoms',
+'over-the-counter',
+])) {
+return 'Health';
+}
+
+if (category.trim().isEmpty) return 'Other';
+
+return category.trim();
+}
+
+IconData categoryIcon(String category) {
+final name = category.toLowerCase();
+
+if (name.contains('coffee')) return Icons.local_cafe_outlined;
+if (name.contains('tea')) return Icons.emoji_food_beverage_outlined;
+if (name.contains('meat')) return Icons.dinner_dining_outlined;
+if (name.contains('poultry')) return Icons.lunch_dining_outlined;
+if (name.contains('fish')) return Icons.set_meal_outlined;
+if (name.contains('dairy')) return Icons.icecream_outlined;
+if (name.contains('bakery')) return Icons.bakery_dining_outlined;
+if (name.contains('grains')) return Icons.ramen_dining_outlined;
+if (name.contains('fruit')) return Icons.eco_outlined;
+if (name.contains('vegetables')) return Icons.eco_outlined;
+if (name.contains('snacks')) return Icons.cookie_outlined;
+if (name.contains('drinks')) return Icons.local_drink_outlined;
+if (name.contains('alcohol')) return Icons.wine_bar_outlined;
+if (name.contains('personal care')) return Icons.spa_outlined;
+if (name.contains('household')) return Icons.home_outlined;
+if (name.contains('pets')) return Icons.pets_outlined;
+if (name.contains('health')) return Icons.local_pharmacy_outlined;
+if (name.contains('ready meals')) return Icons.restaurant_outlined;
+if (name.contains('nicotine')) return Icons.smoking_rooms_outlined;
+
+return Icons.category_outlined;
+}
+
+bool containsAny(String text, List<String> words) {
+for (final word in words) {
+if (text.contains(word)) {
+return true;
+}
+}
+
+return false;
+}

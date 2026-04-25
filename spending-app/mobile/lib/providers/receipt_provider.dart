@@ -5,718 +5,297 @@ import '../models/receipt.dart';
 import '../services/backend_api.dart';
 
 class ReceiptProvider extends ChangeNotifier {
-  List<Receipt> _receipts = [];
-  final BackendApi _backendApi = BackendApi();
-  bool _didAttemptBackendSync = false;
-  bool _isSyncingBackend = false;
-  String? _backendSyncError;
+final List<Receipt> _receipts = [
+Receipt(
+id: '1',
+merchant: 'Starbucks',
+date: DateTime.now(),
+currency: 'EUR',
+transactionId: 'txn_1001',
+items: const [
+ReceiptItem(
+id: '1',
+name: 'Iced latte',
+category: 'Prepared coffee drinks',
+quantity: 1,
+unitPrice: 5.40,
+),
+ReceiptItem(
+id: '2',
+name: 'Cappuccino',
+category: 'Prepared coffee drinks',
+quantity: 1,
+unitPrice: 4.60,
+),
+ReceiptItem(
+id: '3',
+name: 'Croissant',
+category: 'Pastries',
+quantity: 1,
+unitPrice: 4.30,
+),
+],
+),
+Receipt(
+id: '2',
+merchant: 'Albert Heijn',
+date: DateTime.now().subtract(const Duration(days: 1)),
+currency: 'EUR',
+transactionId: 'txn_1002',
+items: const [
+ReceiptItem(
+id: '4',
+name: 'Chicken breast',
+category: 'Chicken breast',
+quantity: 1,
+unitPrice: 8.90,
+),
+ReceiptItem(
+id: '5',
+name: 'Greek yogurt',
+category: 'Yogurt',
+quantity: 2,
+unitPrice: 2.40,
+),
+ReceiptItem(
+id: '6',
+name: 'Bananas',
+category: 'Bananas',
+quantity: 1,
+unitPrice: 2.10,
+),
+ReceiptItem(
+id: '7',
+name: 'Pasta',
+category: 'Pasta',
+quantity: 2,
+unitPrice: 1.90,
+),
+ReceiptItem(
+id: '8',
+name: 'Tomatoes',
+category: 'Tomatoes',
+quantity: 1,
+unitPrice: 3.20,
+),
+],
+),
+Receipt(
+id: '3',
+merchant: 'Jumbo',
+date: DateTime.now().subtract(const Duration(days: 2)),
+currency: 'EUR',
+transactionId: 'txn_1003',
+items: const [
+ReceiptItem(
+id: '9',
+name: 'Coffee beans',
+category: 'Coffee for home',
+quantity: 1,
+unitPrice: 8.50,
+),
+ReceiptItem(
+id: '10',
+name: 'Milk',
+category: 'Milk',
+quantity: 2,
+unitPrice: 1.65,
+),
+ReceiptItem(
+id: '11',
+name: 'Bread',
+category: 'Bread',
+quantity: 1,
+unitPrice: 2.80,
+),
+ReceiptItem(
+id: '12',
+name: 'Eggs',
+category: 'Eggs',
+quantity: 1,
+unitPrice: 3.50,
+),
+],
+),
+Receipt(
+id: '4',
+merchant: 'Uber Eats',
+date: DateTime.now().subtract(const Duration(days: 4)),
+currency: 'EUR',
+transactionId: 'txn_1004',
+items: const [
+ReceiptItem(
+id: '13',
+name: 'Pizza margherita',
+category: 'Pizza',
+quantity: 1,
+unitPrice: 14.90,
+),
+ReceiptItem(
+id: '14',
+name: 'Soft drink',
+category: 'Soft drinks',
+quantity: 2,
+unitPrice: 2.70,
+),
+ReceiptItem(
+id: '15',
+name: 'Delivery fee',
+category: 'Prepared meals',
+quantity: 1,
+unitPrice: 3.20,
+),
+],
+),
+];
 
-  List<Receipt> get receipts => _receipts;
-  bool get isSyncingBackend => _isSyncingBackend;
-  String? get backendSyncError => _backendSyncError;
+final List<PersonalGoal> _personalGoals = [
+PersonalGoal(
+id: 'goal_1',
+amountToSave: 250,
+currency: 'EUR',
+targetDate: DateTime.now().add(const Duration(days: 30)),
+createdAt: DateTime.now().subtract(const Duration(days: 2)),
+),
+];
 
-  // Percentile data for each item category (simulated global comparison)
-  final Map<String, double> _categoryPercentiles = {
-    'Milk': 72.5,
-    'Plant-based milk': 68.0,
-    'Bread': 45.0,
-    'Cheese': 61.5,
-    'Eggs': 55.2,
-    'Butter': 48.3,
-    'Yogurt': 52.1,
-    'Coffee for home': 78.9,
-    'Prepared coffee drinks': 82.3,
-    'Tea': 38.5,
-    'Chicken breast': 58.7,
-    'Beef': 64.2,
-    'Fish': 55.8,
-    'Rice': 42.1,
-    'Pasta': 48.5,
-    'Apples': 35.2,
-    'Bananas': 38.9,
-    'Carrots': 40.1,
-    'Broccoli': 42.5,
-    'Spinach': 44.3,
-    'Tomatoes': 41.2,
-    'Potatoes': 36.5,
-    'Peppers': 39.8,
-    'Onions': 37.2,
-    'Lettuce': 35.8,
-    'Frozen vegetables': 46.2,
-    'Canned vegetables': 33.1,
-    'Nuts': 58.5,
-    'Seeds': 49.2,
-    'Beans': 39.5,
-    'Lentils': 38.2,
-    'Chocolate': 65.3,
-    'Candy': 62.1,
-    'Ice cream': 67.8,
-    'Packaged snacks': 71.5,
-    'Pizza': 68.9,
-    'Prepared meals': 72.3,
-    'Beer': 55.2,
-    'Wine': 58.9,
-    'Spirits': 52.1,
-    'Soft drinks': 61.5,
-    'Juice': 45.8,
-    'Bottled water': 48.2,
-    'Shampoo': 43.2,
-    'Toothpaste': 40.1,
-    'Soap': 38.5,
-    'Deodorant': 45.3,
-    'Toilet paper': 42.1,
-    'Laundry detergent': 44.8,
-    'Dish soap': 41.5,
-    'Pet food': 51.2,
-    'Pet products': 44.1,
-    'Baby products': 49.8,
-    'Cooking oil': 55.4,
-    'Sparkling water': 46.8,
-  };
+List<Receipt> get receipts {
+final sorted = [..._receipts];
+sorted.sort((a, b) => b.date.compareTo(a.date));
+return sorted;
+}
 
-  ReceiptProvider() {
-    _initializeMockData();
+List<PersonalGoal> get personalGoals {
+final sorted = [..._personalGoals];
+sorted.sort((a, b) => a.targetDate.compareTo(b.targetDate));
+return sorted;
+}
+
+void addReceipt(Receipt receipt) {
+_receipts.insert(0, receipt);
+notifyListeners();
+}
+
+void addPersonalGoal({
+required double amountToSave,
+required DateTime targetDate,
+String currency = 'EUR',
+}) {
+final goal = PersonalGoal(
+id: 'goal_${DateTime.now().millisecondsSinceEpoch}',
+amountToSave: amountToSave,
+currency: currency,
+targetDate: targetDate,
+createdAt: DateTime.now(),
+);
+
+_personalGoals.insert(0, goal);
+notifyListeners();
+
+}
+
+Receipt? getReceiptById(String id) {
+for (final receipt in _receipts) {
+if (receipt.id == id) return receipt;
+}
+
+return null;
+
+}
+
+SpendingAnalytics getAnalytics() {
+final categoryTotals = <String, double>{};
+final categoryCounts = <String, int>{};
+
+double totalSpending = 0;
+
+for (final receipt in _receipts) {
+  totalSpending += receipt.totalAmount;
+
+  for (final item in receipt.items) {
+    final category = categoryDisplayName(item.category);
+
+    categoryTotals[category] =
+        (categoryTotals[category] ?? 0) + item.totalPrice;
+
+    categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
   }
+}
 
-  Future<void> syncWithBackend() async {
-    if (_didAttemptBackendSync || _isSyncingBackend) {
-      return;
-    }
+final topCategories = categoryTotals.entries.map((entry) {
+  return ItemCategorySpending(
+    itemCategory: entry.key,
+    amount: entry.value,
+    transactionCount: categoryCounts[entry.key] ?? 0,
+    percentile: percentileForCategory(entry.key, entry.value),
+  );
+}).toList();
 
-    _isSyncingBackend = true;
-    notifyListeners();
+topCategories.sort((a, b) => b.amount.compareTo(a.amount));
 
-    try {
-      final transactions = await _backendApi.getTransactions();
-      final mappedReceipts = transactions
-          .map(_mapTransactionToReceipt)
-          .whereType<Receipt>()
-          .toList();
+return SpendingAnalytics(
+  totalSpending: totalSpending,
+  transactionCount: _receipts.length,
+  topItemCategories: topCategories,
+  receipts: receipts,
+  personalGoals: personalGoals,
+  aiAdvice: buildAiAdvice(topCategories),
+);
 
-      if (mappedReceipts.isNotEmpty) {
-        _receipts = mappedReceipts;
-      }
+}
 
-      _backendSyncError = null;
-    } catch (e) {
-      _backendSyncError = e.toString();
-    } finally {
-      _didAttemptBackendSync = true;
-      _isSyncingBackend = false;
-      notifyListeners();
-    }
-  }
+double percentileForCategory(String category, double amount) {
+final name = category.toLowerCase();
 
-  Receipt? _mapTransactionToReceipt(Map<String, dynamic> transaction) {
-    final id = transaction['id']?.toString();
-    if (id == null || id.isEmpty) {
-      return null;
-    }
+double benchmark;
 
-    final merchant =
-        transaction['merchant']?.toString() ??
-        transaction['description']?.toString() ??
-        'Unknown merchant';
-    final description = transaction['description']?.toString() ?? merchant;
-    final category = transaction['general_category']?.toString();
-    final amount = _toDouble(transaction['amount']).abs();
-    final date = DateTime.tryParse(
-          transaction['transaction_date']?.toString() ?? '',
-        ) ??
-        DateTime.now();
+if (name.contains('coffee')) {
+  benchmark = 18;
+} else if (name.contains('meat') || name.contains('poultry')) {
+  benchmark = 35;
+} else if (name.contains('dairy')) {
+  benchmark = 22;
+} else if (name.contains('ready meals')) {
+  benchmark = 25;
+} else if (name.contains('snacks')) {
+  benchmark = 16;
+} else if (name.contains('drinks')) {
+  benchmark = 14;
+} else if (name.contains('household')) {
+  benchmark = 20;
+} else if (name.contains('personal care')) {
+  benchmark = 18;
+} else if (name.contains('pets')) {
+  benchmark = 24;
+} else {
+  benchmark = 28;
+}
 
-    return Receipt(
-      id: id,
-      storeName: merchant,
-      date: date,
-      total: amount,
-      lineItems: [
-        ReceiptLineItem(
-          id: 'line-$id',
-          name: description,
-          detailedCategory: category,
-          price: amount,
-          quantity: 1,
-          isCategorized: category != null,
-        ),
-      ],
-      isProcessed: true,
-    );
-  }
+final ratio = amount / benchmark;
+final percentile = 50 + (ratio * 18);
 
-  double _toDouble(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
+if (percentile > 99.9) return 99.9;
+if (percentile < 10) return 10;
 
-    return double.tryParse(value?.toString() ?? '') ?? 0;
-  }
+return percentile;
 
-  void _initializeMockData() {
-    final now = DateTime.now();
-    const uuid = Uuid();
+}
 
-    _receipts = [
-      // Receipt 1: Whole Foods - Dairy focused
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Whole Foods Market',
-        date: now.subtract(const Duration(days: 15)),
-        total: 42.30,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Organic Milk 1L',
-            detailedCategory: 'Milk',
-            price: 5.99,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Greek Yogurt',
-            detailedCategory: 'Yogurt',
-            price: 6.49,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Cheddar Cheese',
-            detailedCategory: 'Cheese',
-            price: 8.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Organic Bread',
-            detailedCategory: 'Bread',
-            price: 4.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Free Range Eggs',
-            detailedCategory: 'Eggs',
-            price: 9.85,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
+String buildAiAdvice(List<ItemCategorySpending> categories) {
+if (categories.isEmpty) {
+return 'Scan a receipt first. Once we know your categories, AI advice can suggest where to save.';
+}
 
-      // Receipt 2: Fresh Market - Produce focused
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Fresh Market',
-        date: now.subtract(const Duration(days: 13)),
-        total: 38.75,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Organic Spinach',
-            detailedCategory: 'Spinach',
-            price: 4.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Broccoli Crown',
-            detailedCategory: 'Broccoli',
-            price: 3.49,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Carrots 1kg',
-            detailedCategory: 'Carrots',
-            price: 2.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Bell Peppers',
-            detailedCategory: 'Peppers',
-            price: 5.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Tomatoes',
-            detailedCategory: 'Tomatoes',
-            price: 4.99,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Apples 1kg',
-            detailedCategory: 'Apples',
-            price: 5.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Bananas',
-            detailedCategory: 'Bananas',
-            price: 1.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
+final top = categories.first;
+final goal = personalGoals.isEmpty ? null : personalGoals.first;
 
-      // Receipt 3: Costco - Bulk shopping
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Costco',
-        date: now.subtract(const Duration(days: 11)),
-        total: 87.50,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Chicken Breast Pack',
-            detailedCategory: 'Chicken breast',
-            price: 19.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Ground Beef 2kg',
-            detailedCategory: 'Beef',
-            price: 24.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Rice 5kg',
-            detailedCategory: 'Rice',
-            price: 14.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Pasta Multi-pack',
-            detailedCategory: 'Pasta',
-            price: 9.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Nuts & Seeds Mix',
-            detailedCategory: 'Nuts',
-            price: 17.55,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
+if (goal == null) {
+  return 'Your biggest spending signal is ${top.itemCategory}. Add a savings goal to get specific AI advice.';
+}
 
-      // Receipt 4: Coffee Shop
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Brew Haven Coffee',
-        date: now.subtract(const Duration(days: 9)),
-        total: 28.50,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Cappuccino',
-            detailedCategory: 'Prepared coffee drinks',
-            price: 5.50,
-            quantity: 3,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Espresso Shot',
-            detailedCategory: 'Prepared coffee drinks',
-            price: 3.50,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Oat Milk Latte',
-            detailedCategory: 'Prepared coffee drinks',
-            price: 6.50,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
+final suggestedCut = top.amount * 0.20;
 
-      // Receipt 5: Supermarket - Mixed
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'SuperMart',
-        date: now.subtract(const Duration(days: 7)),
-        total: 56.80,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Fish Fillets',
-            detailedCategory: 'Fish',
-            price: 14.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Whole Grain Bread',
-            detailedCategory: 'Bread',
-            price: 4.49,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Canned Beans',
-            detailedCategory: 'Beans',
-            price: 1.99,
-            quantity: 3,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Beer 6-pack',
-            detailedCategory: 'Beer',
-            price: 9.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Red Wine',
-            detailedCategory: 'Wine',
-            price: 14.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Dark Chocolate',
-            detailedCategory: 'Chocolate',
-            price: 5.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
+return 'To reach your €${goal.amountToSave.toStringAsFixed(0)} goal, start with ${top.itemCategory}. Cutting it by 20% could save about €${suggestedCut.toStringAsFixed(0)}.';
 
-      // Receipt 6: Health Store
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Health & Wellness',
-        date: now.subtract(const Duration(days: 5)),
-        total: 34.20,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Plant-based Milk',
-            detailedCategory: 'Plant-based milk',
-            price: 4.99,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Shampoo Organic',
-            detailedCategory: 'Shampoo',
-            price: 9.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Toothpaste Natural',
-            detailedCategory: 'Toothpaste',
-            price: 5.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Tea Selection',
-            detailedCategory: 'Tea',
-            price: 8.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
-
-      // Receipt 7: Specialty Grocery
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Gourmet Market',
-        date: now.subtract(const Duration(days: 3)),
-        total: 45.60,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Butter Premium',
-            detailedCategory: 'Butter',
-            price: 7.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Olive Oil',
-            detailedCategory: 'Cooking oil',
-            price: 12.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Artisan Pasta',
-            detailedCategory: 'Pasta',
-            price: 4.99,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Premium Chocolate',
-            detailedCategory: 'Chocolate',
-            price: 6.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Sparkling Water',
-            detailedCategory: 'Sparkling water',
-            price: 5.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
-
-      // Receipt 8: Frozen Foods
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Frozen Foods Plus',
-        date: now.subtract(const Duration(days: 2)),
-        total: 31.45,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Frozen Vegetables Mix',
-            detailedCategory: 'Frozen vegetables',
-            price: 8.99,
-            quantity: 2,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Frozen Fruit',
-            detailedCategory: 'Frozen fruit',
-            price: 6.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Ice Cream',
-            detailedCategory: 'Ice cream',
-            price: 7.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Ready Meals Pack',
-            detailedCategory: 'Prepared meals',
-            price: 9.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
-
-      // Receipt 9: Pet Store
-      Receipt(
-        id: uuid.v4(),
-        storeName: 'Pet Paradise',
-        date: now.subtract(const Duration(days: 1)),
-        total: 28.90,
-        lineItems: [
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Dog Food Premium',
-            detailedCategory: 'Pet food',
-            price: 24.99,
-            quantity: 1,
-            isCategorized: true,
-          ),
-          ReceiptLineItem(
-            id: uuid.v4(),
-            name: 'Pet Shampoo',
-            detailedCategory: 'Pet products',
-            price: 3.91,
-            quantity: 1,
-            isCategorized: true,
-          ),
-        ],
-        isProcessed: true,
-      ),
-    ];
-  }
-
-  void addReceipt(Receipt receipt) {
-    _receipts.add(receipt);
-    notifyListeners();
-  }
-
-  void deleteReceipt(String id) {
-    _receipts.removeWhere((r) => r.id == id);
-    notifyListeners();
-  }
-
-  void updateLineItem(String receiptId, String itemId, String newCategory) {
-    for (var receipt in _receipts) {
-      if (receipt.id == receiptId) {
-        final itemIndex = receipt.lineItems.indexWhere((i) => i.id == itemId);
-        if (itemIndex != -1) {
-          final oldItem = receipt.lineItems[itemIndex];
-          receipt.lineItems[itemIndex] = ReceiptLineItem(
-            id: oldItem.id,
-            name: oldItem.name,
-            detailedCategory: newCategory,
-            price: oldItem.price,
-            quantity: oldItem.quantity,
-            isCategorized: true,
-          );
-        }
-      }
-    }
-    notifyListeners();
-  }
-
-  SpendingAnalytics getAnalytics({int days = 30}) {
-    final cutoffDate = DateTime.now().subtract(Duration(days: days));
-    final filteredReceipts = _receipts
-        .where((r) => r.date.isAfter(cutoffDate))
-        .toList();
-
-    if (filteredReceipts.isEmpty) {
-      return SpendingAnalytics(
-        totalSpending: 0,
-        averageTransaction: 0,
-        transactionCount: 0,
-        itemCategoryBreakdown: {},
-        topItemCategories: [],
-        dailyTrend: [],
-        categoryFrequency: {},
-      );
-    }
-
-    // Calculate totals
-    final totalSpending = filteredReceipts.fold<double>(
-      0,
-      (sum, r) => sum + r.total,
-    );
-    final transactionCount = filteredReceipts.length;
-    final averageTransaction = totalSpending / transactionCount;
-
-    // Item category breakdown
-    final itemCategoryMap = <String, double>{};
-    final itemCategoryCountMap = <String, int>{};
-
-    for (var receipt in filteredReceipts) {
-      for (var item in receipt.lineItems) {
-        final category = item.detailedCategory ?? 'Uncategorized';
-        itemCategoryMap[category] =
-            (itemCategoryMap[category] ?? 0) + item.subtotal;
-        itemCategoryCountMap[category] =
-            (itemCategoryCountMap[category] ?? 0) + 1;
-      }
-    }
-
-    // Create top item categories list with percentiles
-    final topItemCategories = itemCategoryMap.entries.map((e) {
-      final percentile = _categoryPercentiles[e.key] ?? 50.0;
-      final percentileText = _getPercentileDescription(percentile);
-      return ItemCategorySpending(
-        itemCategory: e.key,
-        amount: e.value,
-        transactionCount: itemCategoryCountMap[e.key] ?? 0,
-        percentile: percentile,
-        percentileText: percentileText,
-        percentileRank: percentile,
-      );
-    }).toList()..sort((a, b) => b.amount.compareTo(a.amount));
-
-    // Daily trend
-    final dailyMap = <DateTime, double>{};
-    for (var receipt in filteredReceipts) {
-      final date = DateTime(
-        receipt.date.year,
-        receipt.date.month,
-        receipt.date.day,
-      );
-      dailyMap[date] = (dailyMap[date] ?? 0) + receipt.total;
-    }
-
-    final dailyTrend =
-        dailyMap.entries
-            .map((e) => DailySpending(date: e.key, amount: e.value))
-            .toList()
-          ..sort((a, b) => a.date.compareTo(b.date));
-
-    return SpendingAnalytics(
-      totalSpending: totalSpending,
-      averageTransaction: averageTransaction,
-      transactionCount: transactionCount,
-      itemCategoryBreakdown: itemCategoryMap,
-      topItemCategories: topItemCategories,
-      dailyTrend: dailyTrend,
-      categoryFrequency: itemCategoryCountMap,
-    );
-  }
-
-  String _getPercentileDescription(double percentile) {
-    if (percentile >= 90) {
-      return 'Top 10% - Way above average';
-    } else if (percentile >= 75) {
-      return 'Top 25% - Above average';
-    } else if (percentile >= 60) {
-      return 'Top 40% - Slightly above average';
-    } else if (percentile >= 50) {
-      return 'Average';
-    } else if (percentile >= 40) {
-      return 'Slightly below average';
-    } else if (percentile >= 25) {
-      return 'Below average';
-    } else {
-      return 'Bottom 25% - Way below average';
-    }
-  }
-
-  double getCategoryPercentile(String category) {
-    return _categoryPercentiles[category] ?? 50.0;
-  }
+}
 }
