@@ -108,7 +108,6 @@ async def parse_receipt(
 async def parse_and_save_receipt(
 	image: UploadFile = File(...),
 	user_id: int = Form(...),
-	transaction_id: int | None = Form(default=None),
 	db: Session = Depends(get_db),
 ) -> ReceiptParseResponse:
 	"""
@@ -123,16 +122,14 @@ async def parse_and_save_receipt(
 		content_type=image.content_type,
 	)
 
-	resolved_transaction_id = transaction_id
-	if resolved_transaction_id is None:
-		resolved_transaction_id = find_best_transaction_id(
-			db,
-			user_id=user_id,
-			receipt_total=parsed.receipt_total,
-			receipt_date=parsed.timestamp,
-			merchant=parsed.merchant,
-			currency=parsed.currency,
-		)
+	resolved_transaction_id = find_best_transaction_id(
+		db,
+		user_id=user_id,
+		receipt_total=parsed.receipt_total,
+		receipt_date=parsed.timestamp,
+		merchant=parsed.merchant,
+		currency=parsed.currency,
+	)
 
 	saved = repository.save_parsed_receipt(
 		db,
