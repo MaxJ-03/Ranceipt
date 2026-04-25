@@ -86,6 +86,7 @@ CREATE TABLE receipt_items (
     id BIGSERIAL PRIMARY KEY,
     receipt_id BIGINT NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
     category_id BIGINT NOT NULL REFERENCES custom_categories(id) ON DELETE RESTRICT,
+    name TEXT,
     quantity NUMERIC(10, 2) NOT NULL DEFAULT 1,
     unit_price NUMERIC(12, 2) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

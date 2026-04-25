@@ -245,7 +245,44 @@ class DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      body: SafeArea(child: buildCurrentPage()),
+      body: Stack(
+        children: [
+          SafeArea(child: buildCurrentPage()),
+          Consumer<ReceiptProvider>(
+            builder: (context, provider, child) {
+              if (!provider.isUploadingReceipt) {
+                return const SizedBox.shrink();
+              }
+
+              return Positioned.fill(
+                child: AbsorbPointer(
+                  absorbing: true,
+                  child: Container(
+                    color: Colors.black.withOpacity(0.55),
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: AppColors.aqua),
+                          SizedBox(height: 18),
+                          Text(
+                            'Uploading receipt...',
+                            style: TextStyle(
+                              color: AppColors.text,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: AppColors.surface,
@@ -384,8 +421,7 @@ class DashboardHomeState extends State<DashboardHome> {
                         Expanded(
                           child: DashboardMetricCard(
                             label: 'Spent',
-                            value:
-                                '€${analytics.totalSpending.toStringAsFixed(0)}',
+                            value: '€${analytics.totalSpending.toStringAsFixed(0)}',
                             icon: Icons.account_balance_wallet_outlined,
                             accent: AppColors.primary,
                           ),
@@ -515,13 +551,8 @@ class DashboardMainActionCard extends StatelessWidget {
       if (progress < 0) progress = 0;
     }
 
-    final color = hasData
-        ? dashboardCategoryColor(categoryName)
-        : AppColors.aqua;
-
-    final icon = hasData
-        ? categoryIcon(categoryName)
-        : Icons.document_scanner_outlined;
+    final color = hasData ? dashboardCategoryColor(categoryName) : AppColors.aqua;
+    final icon = hasData ? categoryIcon(categoryName) : Icons.document_scanner_outlined;
 
     String fallbackAdviceText;
 
@@ -603,13 +634,9 @@ class DashboardMainActionCard extends StatelessWidget {
                 child: SizedBox(
                   height: 52,
                   child: FilledButton.icon(
-                    onPressed: isAdviceLoading
-                        ? null
-                        : (showAdvice ? onResetAdvice : onGenerateAdvice),
+                    onPressed: isAdviceLoading ? null : (showAdvice ? onResetAdvice : onGenerateAdvice),
                     icon: Icon(
-                      showAdvice
-                          ? Icons.refresh_rounded
-                          : Icons.auto_awesome_outlined,
+                      showAdvice ? Icons.refresh_rounded : Icons.auto_awesome_outlined,
                     ),
                     label: Text(
                       showAdvice ? 'Reset' : 'Advice',
@@ -619,13 +646,9 @@ class DashboardMainActionCard extends StatelessWidget {
                       ),
                     ),
                     style: FilledButton.styleFrom(
-                      backgroundColor: showAdvice
-                          ? AppColors.surfaceSoft
-                          : AppColors.primary,
+                      backgroundColor: showAdvice ? AppColors.surfaceSoft : AppColors.primary,
                       foregroundColor: AppColors.text,
-                      side: showAdvice
-                          ? const BorderSide(color: AppColors.border)
-                          : BorderSide.none,
+                      side: showAdvice ? const BorderSide(color: AppColors.border) : BorderSide.none,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
                       ),
@@ -650,9 +673,7 @@ class DashboardMainActionCard extends StatelessWidget {
                   Row(
                     children: [
                       DashboardIconBadge(
-                        icon: hasData
-                            ? categoryIcon(categoryName)
-                            : Icons.auto_awesome_outlined,
+                        icon: hasData ? categoryIcon(categoryName) : Icons.auto_awesome_outlined,
                         color: hasData ? color : AppColors.primary,
                       ),
                       const SizedBox(width: 14),
@@ -795,9 +816,7 @@ class DashboardGoalPreview extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  hasGoal
-                      ? '€${goal!.amountToSave.toStringAsFixed(0)} goal'
-                      : 'No goal set',
+                  hasGoal ? '€${goal!.amountToSave.toStringAsFixed(0)} goal' : 'No goal set',
                   style: const TextStyle(
                     color: AppColors.text,
                     fontSize: 18,
@@ -806,9 +825,7 @@ class DashboardGoalPreview extends StatelessWidget {
                 ),
                 const SizedBox(height: 5),
                 Text(
-                  hasGoal
-                      ? '${goal!.daysLeft} days left'
-                      : 'Add a saving target',
+                  hasGoal ? '${goal!.daysLeft} days left' : 'Add a saving target',
                   style: const TextStyle(color: AppColors.muted, fontSize: 14),
                 ),
               ],

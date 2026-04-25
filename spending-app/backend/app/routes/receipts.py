@@ -21,6 +21,7 @@ repository = ReceiptRepository()
 
 class ReceiptItemCreate(BaseModel):
 	category_id: int
+	name: Optional[str] = None
 	quantity: float = 1
 	unit_price: float
 
@@ -216,12 +217,14 @@ def create_receipt(
 					INSERT INTO receipt_items (
 						receipt_id,
 						category_id,
+						name,
 						quantity,
 						unit_price
 					)
 					VALUES (
 						:receipt_id,
 						:category_id,
+						:name,
 						:quantity,
 						:unit_price
 					);
@@ -230,6 +233,7 @@ def create_receipt(
 				{
 					"receipt_id": receipt["id"],
 					"category_id": item.category_id,
+					"name": item.name,
 					"quantity": item.quantity,
 					"unit_price": item.unit_price,
 				},
@@ -405,6 +409,7 @@ def get_receipt_detail(
 				ri.receipt_id,
 				ri.category_id,
 				cc.name AS category,
+				ri.name,
 				ri.quantity,
 				ri.unit_price,
 				ri.created_at

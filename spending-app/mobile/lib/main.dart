@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/receipt_provider.dart';
-import 'screens/dashboard_screen.dart';
+import 'screens/auth_entry_screen.dart';
 import 'theme/app_colors.dart';
 
 void main() {
@@ -87,7 +87,7 @@ class RanceiptApp extends StatelessWidget {
             ),
           ),
         ),
-        home: const AuthEntryScreen(),
+        home: AuthEntryScreen(),
       ),
     );
   }

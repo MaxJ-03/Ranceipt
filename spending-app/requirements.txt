@@ -9,3 +9,4 @@ cryptography
 python-multipart
 langchain-anthropic
 langchain-core
+playwright

@@ -1,0 +1,18 @@
+{
+  "name": "ranceipt-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:web": "cd mobile && flutter build web --dart-define=BACKEND_BASE_URL=http://127.0.0.1:8000",
+    "test:e2e": "npm run build:web && playwright test",
+    "test:e2e:headed": "npm run build:web && playwright test --headed",
+    "test:e2e:ui": "npm run build:web && playwright test --ui",
+    "test:e2e:debug": "npm run build:web && playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^20.17.10",
+    "http-server": "^14.1.1",
+    "typescript": "^5.7.2"
+  }
+}

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.auth import router as auth_router
 from app.routes.bunq import router as bunq_router
 from app.routes.categories import router as categories_router
+from app.routes.demo import router as demo_router
 from app.routes.goals import router as goals_router
 from app.routes.personal_goals import router as personal_goals_router
 from app.routes.receipts import router as receipts_router
@@ -28,7 +29,8 @@ else:
 app.add_middleware(
 	CORSMiddleware,
 	allow_origins=cors_origins,
-	allow_credentials=True,
+	allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+	allow_credentials=False,
 	allow_methods=["*"],
 	allow_headers=["*"],
 )
@@ -46,3 +48,4 @@ app.include_router(goals_router)
 app.include_router(personal_goals_router)
 app.include_router(receipts_router)
 app.include_router(bunq_router)
+app.include_router(demo_router)

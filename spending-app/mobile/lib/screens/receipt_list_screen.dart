@@ -64,54 +64,7 @@ class ReceiptListScreen extends StatelessWidget {
     );
   }
 
-  ReceiptData _toReceiptData(Receipt receipt) {
-    final firstItem = receipt.lineItems.isNotEmpty ? receipt.lineItems.first : null;
-    final category = firstItem?.detailedCategory ?? 'Uncategorized';
 
-    return ReceiptData(
-      merchant: receipt.storeName,
-      category: category,
-      amount: receipt.total,
-      date: _relativeDate(receipt.date),
-      itemCount: receipt.lineItems.length,
-      icon: _iconForCategory(category),
-    );
-  }
-
-  String _relativeDate(DateTime date) {
-    final today = DateTime.now();
-    final normalizedToday = DateTime(today.year, today.month, today.day);
-    final normalizedDate = DateTime(date.year, date.month, date.day);
-    final dayDiff = normalizedToday.difference(normalizedDate).inDays;
-
-    if (dayDiff <= 0) {
-      return 'Today';
-    }
-
-    if (dayDiff == 1) {
-      return 'Yesterday';
-    }
-
-    return '$dayDiff days ago';
-  }
-
-  IconData _iconForCategory(String category) {
-    final normalized = category.toLowerCase();
-
-    if (normalized.contains('coffee') || normalized.contains('tea')) {
-      return Icons.local_cafe_outlined;
-    }
-
-    if (normalized.contains('transport') || normalized.contains('travel')) {
-      return Icons.train_outlined;
-    }
-
-    if (normalized.contains('restaurant') || normalized.contains('pizza')) {
-      return Icons.restaurant_outlined;
-    }
-
-    return Icons.shopping_basket_outlined;
-  }
 
   void showMessage(BuildContext context, String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));

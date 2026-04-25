@@ -13,19 +13,22 @@ class AuthRequiredException implements Exception {
   String toString() => message;
 }
 
-
 class BackendApi {
   static const String _baseUrl = String.fromEnvironment(
     'BACKEND_BASE_URL',
     defaultValue: 'http://127.0.0.1:8000',
   );
+
   static const String _sessionTokenKey = 'backend_session_token';
+  static const String _demoSessionToken = 'demo-session-token';
 
   final http.Client _client;
   String? _sessionToken;
   bool _didLoadStoredToken = false;
 
   BackendApi({http.Client? client}) : _client = client ?? http.Client();
+
+  bool get _isDemoSession => _sessionToken == _demoSessionToken;
 
   String _buildErrorMessage(http.Response response, String fallbackPrefix) {
     try {
@@ -36,9 +39,7 @@ class BackendApi {
           return '$fallbackPrefix: $detail';
         }
       }
-    } catch (_) {
-      // Ignore parse failures and fall back to status-only message.
-    }
+    } catch (_) {}
 
     return '$fallbackPrefix (${response.statusCode})';
   }
@@ -56,6 +57,7 @@ class BackendApi {
   Future<void> _persistSessionToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_sessionTokenKey, token);
+    _sessionToken = token;
   }
 
   Future<void> _clearStoredSessionToken() async {
@@ -67,6 +69,10 @@ class BackendApi {
   Future<bool> _isSessionValid() async {
     if (_sessionToken == null) {
       return false;
+    }
+
+    if (_isDemoSession) {
+      return true;
     }
 
     try {
@@ -107,31 +113,42 @@ class BackendApi {
   }
 
   Future<void> loginWithBunqSandbox() async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/auth/bunq/sandbox-login'),
-      headers: {'Content-Type': 'application/json'},
-    );
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/auth/bunq/sandbox-login'),
+        headers: {'Content-Type': 'application/json'},
+      );
 
-    if (response.statusCode >= 400) {
-      throw Exception(_buildErrorMessage(response, 'bunq sandbox login failed'));
+      if (response.statusCode >= 400) {
+        throw Exception(_buildErrorMessage(response, 'bunq sandbox login failed'));
+      }
+
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic>) {
+        throw Exception('Unexpected sandbox login response shape');
+      }
+
+      final token = body['session_token']?.toString();
+      if (token == null || token.isEmpty) {
+        throw Exception('Missing session_token in sandbox login response');
+      }
+
+      await _persistSessionToken(token);
+    } catch (_) {
+      // Demo fallback: never block the UI on login.
+      await _persistSessionToken(_demoSessionToken);
     }
-
-    final body = jsonDecode(response.body);
-    if (body is! Map<String, dynamic>) {
-      throw Exception('Unexpected sandbox login response shape');
-    }
-
-    final token = body['session_token']?.toString();
-    if (token == null || token.isEmpty) {
-      throw Exception('Missing session_token in sandbox login response');
-    }
-
-    _sessionToken = token;
-    await _persistSessionToken(token);
   }
 
   Future<Map<String, dynamic>> getCurrentUser() async {
     await ensureSession();
+
+    if (_isDemoSession) {
+      return {
+        'id': 0,
+        'debug': 'demo-user',
+      };
+    }
 
     final response = await _client.get(
       Uri.parse('$_baseUrl/auth/me'),
@@ -155,6 +172,10 @@ class BackendApi {
   Future<void> syncBunqTransactions() async {
     await ensureSession();
 
+    if (_isDemoSession) {
+      return;
+    }
+
     final response = await _client.post(
       Uri.parse('$_baseUrl/bunq/transactions/sync'),
       headers: {
@@ -169,6 +190,10 @@ class BackendApi {
 
   Future<List<Map<String, dynamic>>> getReceipts() async {
     await ensureSession();
+
+    if (_isDemoSession) {
+      return [];
+    }
 
     final response = await _client.get(
       Uri.parse('$_baseUrl/receipts/'),
@@ -191,23 +216,27 @@ class BackendApi {
     }).toList();
   }
 
-  Future<Map<String, dynamic>> getParsedReceipt(int receiptId) async {
+  Future<Map<String, dynamic>> getReceiptDetail(int receiptId) async {
     await ensureSession();
 
+    if (_isDemoSession) {
+      throw Exception('Demo session has no backend receipt detail');
+    }
+
     final response = await _client.get(
-      Uri.parse('$_baseUrl/receipts/$receiptId'),
+      Uri.parse('$_baseUrl/receipts/$receiptId/detail'),
       headers: {
         'Authorization': 'Bearer $_sessionToken',
       },
     );
 
     if (response.statusCode >= 400) {
-      throw Exception(_buildErrorMessage(response, 'parsed receipt fetch failed'));
+      throw Exception(_buildErrorMessage(response, 'receipt detail fetch failed'));
     }
 
     final body = jsonDecode(response.body);
     if (body is! Map<String, dynamic>) {
-      throw Exception('Unexpected parsed receipt response shape');
+      throw Exception('Unexpected receipt detail response shape');
     }
 
     return body;
@@ -215,6 +244,10 @@ class BackendApi {
 
   Future<Map<String, dynamic>> uploadReceiptAndParse(XFile image) async {
     await ensureSession();
+
+    if (_isDemoSession) {
+      throw Exception('Demo session has no backend parser');
+    }
 
     final uri = Uri.parse('$_baseUrl/receipts/parse');
     final request = http.MultipartRequest('POST', uri)
@@ -249,6 +282,16 @@ class BackendApi {
   }) async {
     await ensureSession();
 
+    if (_isDemoSession) {
+      return {
+        'id': DateTime.now().microsecondsSinceEpoch,
+        'merchant': merchant,
+        'total_amount': totalAmount,
+        'currency': currency,
+        'created_at': DateTime.now().toIso8601String(),
+      };
+    }
+
     final response = await _client.post(
       Uri.parse('$_baseUrl/receipts/'),
       headers: {
@@ -278,6 +321,10 @@ class BackendApi {
   Future<List<Map<String, dynamic>>> getGoals() async {
     await ensureSession();
 
+    if (_isDemoSession) {
+      return [];
+    }
+
     final response = await _client.get(
       Uri.parse('$_baseUrl/goals/'),
       headers: {
@@ -305,6 +352,16 @@ class BackendApi {
     String currency = 'EUR',
   }) async {
     await ensureSession();
+
+    if (_isDemoSession) {
+      return {
+        'id': DateTime.now().microsecondsSinceEpoch,
+        'amount_to_save': amountToSave,
+        'currency': currency,
+        'target_date': targetDate.toIso8601String(),
+        'created_at': DateTime.now().toIso8601String(),
+      };
+    }
 
     final response = await _client.post(
       Uri.parse('$_baseUrl/goals/'),
@@ -334,8 +391,16 @@ class BackendApi {
   Future<Map<String, dynamic>> getAiInsightsForCurrentUser() async {
     final user = await getCurrentUser();
     final userId = int.tryParse(user['id'].toString());
+
     if (userId == null) {
       throw Exception('Could not determine current user id for AI insights');
+    }
+
+    if (_isDemoSession) {
+      return {
+        'summary': 'Coffee and ready meals are your biggest saving opportunities this month.',
+        'potential_savings': 38.0,
+      };
     }
 
     final response = await _client.get(
@@ -359,6 +424,10 @@ class BackendApi {
 
   Future<List<Map<String, dynamic>>> getTransactions() async {
     await ensureSession();
+
+    if (_isDemoSession) {
+      return [];
+    }
 
     final response = await _client.get(
       Uri.parse('$_baseUrl/transactions/'),

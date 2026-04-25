@@ -1,18 +1,18 @@
 import hashlib
 import secrets
 from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.security import encrypt_token
-from app.services.bunq_client import BunqClient
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 bearer_scheme = HTTPBearer()
+DEMO_BUNQ_IDENTITY = "sandbox-demo-user"
 
 
 def create_session_token() -> str:
@@ -34,9 +34,15 @@ def create_app_session(db: Session, user_id: int) -> dict[str, object]:
             INSERT INTO app_sessions (
                 user_id,
                 session_token_hash,
-                expires_at
+                expires_at,
+                revoked
             )
-            VALUES (:user_id, :token_hash, :expires_at);
+            VALUES (
+                :user_id,
+                :token_hash,
+                :expires_at,
+                FALSE
+            );
             """
         ),
         {
@@ -50,6 +56,65 @@ def create_app_session(db: Session, user_id: int) -> dict[str, object]:
         "session_token": raw_token,
         "expires_at": expires_at,
     }
+
+
+def get_or_create_demo_user(db: Session) -> int:
+    connection = db.execute(
+        text(
+            """
+            SELECT user_id
+            FROM bunq_connections
+            WHERE bunq_user_api_key_id = :bunq_user_api_key_id
+            LIMIT 1;
+            """
+        ),
+        {"bunq_user_api_key_id": DEMO_BUNQ_IDENTITY},
+    ).mappings().first()
+
+    if connection:
+        return int(connection["user_id"])
+
+    user = db.execute(
+        text(
+            """
+            INSERT INTO users DEFAULT VALUES
+            RETURNING id;
+            """
+        )
+    ).mappings().first()
+
+    user_id = int(user["id"])
+
+    db.execute(
+        text(
+            """
+            INSERT INTO bunq_connections (
+                user_id,
+                bunq_user_api_key_id,
+                encrypted_access_token,
+                last_synced_at
+            )
+            VALUES (
+                :user_id,
+                :bunq_user_api_key_id,
+                :encrypted_access_token,
+                NOW()
+            )
+            ON CONFLICT (bunq_user_api_key_id)
+            DO UPDATE SET
+                user_id = EXCLUDED.user_id,
+                encrypted_access_token = EXCLUDED.encrypted_access_token,
+                last_synced_at = NOW();
+            """
+        ),
+        {
+            "user_id": user_id,
+            "bunq_user_api_key_id": DEMO_BUNQ_IDENTITY,
+            "encrypted_access_token": "sandbox_demo_token",
+        },
+    )
+
+    return user_id
 
 
 def get_current_user(
@@ -77,79 +142,21 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    return user
+    return dict(user)
 
 
 @router.post("/bunq/sandbox-login")
 def bunq_sandbox_login(db: Session = Depends(get_db)):
-    """
-    Sandbox-only login endpoint.
-    Uses BUNQ_SANDBOX_API_KEY from .env to establish a bunq sandbox session.
-    Creates or reuses an internal user linked to that sandbox bunq user.
-    Returns session_token for Flutter to use with Authorization: Bearer header.
-    """
-    try:
-        client = BunqClient()
-        client.ensure_session()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to establish bunq sandbox session: {str(exc)}")
-
-    if not client.user_id:
-        raise HTTPException(status_code=500, detail="Could not retrieve bunq sandbox user_id")
-
-    bunq_sandbox_user_id = f"sandbox-user-{client.user_id}"
-
-    connection = db.execute(
-        text(
-            """
-            SELECT id, user_id
-            FROM bunq_connections
-            WHERE bunq_user_api_key_id = :bunq_user_api_key_id
-            LIMIT 1;
-            """
-        ),
-        {"bunq_user_api_key_id": bunq_sandbox_user_id},
-    ).mappings().first()
-
-    if connection:
-        user_id = connection["user_id"]
-    else:
-        user = db.execute(
-            text(
-                """
-                INSERT INTO users DEFAULT VALUES
-                RETURNING id;
-                """
-            )
-        ).mappings().first()
-
-        user_id = user["id"]
-        db.execute(
-            text(
-                """
-                INSERT INTO bunq_connections (
-                    user_id,
-                    bunq_user_api_key_id
-                )
-                VALUES (
-                    :user_id,
-                    :bunq_user_api_key_id
-                );
-                """
-            ),
-            {
-                "user_id": user_id,
-                "bunq_user_api_key_id": bunq_sandbox_user_id,
-            },
-        )
-
+    user_id = get_or_create_demo_user(db)
     session = create_app_session(db, user_id)
     db.commit()
 
     return {
+        "message": "bunq sandbox login successful",
         "user_id": user_id,
         "session_token": session["session_token"],
-        "bunq_sandbox_user_id": bunq_sandbox_user_id,
+        "bunq_sandbox_user_id": DEMO_BUNQ_IDENTITY,
+        "account_count": 1,
         "expires_at": session["expires_at"],
     }
 
