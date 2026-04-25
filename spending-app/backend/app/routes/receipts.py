@@ -37,6 +37,59 @@ def rows_to_dicts(rows):
 	return [dict(row._mapping) for row in rows]
 
 
+def find_best_transaction_id(
+	db: Session,
+	*,
+	user_id: int,
+	receipt_total: float,
+	receipt_date: datetime,
+	merchant: str | None,
+	currency: str,
+) -> int | None:
+	"""Find best matching transaction by amount, timestamp proximity, and merchant similarity."""
+	match = db.execute(
+		text(
+			"""
+			SELECT
+				t.id,
+				ABS(ABS(t.amount) - :total_amount) AS amount_difference,
+				ABS(EXTRACT(EPOCH FROM (t.transaction_date - CAST(:receipt_date AS timestamptz)))) AS date_difference_seconds,
+				CASE
+					WHEN :merchant IS NULL THEN 0
+					WHEN LOWER(COALESCE(t.merchant, '')) = LOWER(:merchant) THEN 0
+					WHEN LOWER(COALESCE(t.merchant, '')) LIKE LOWER(:merchant_like)
+						OR LOWER(COALESCE(t.description, '')) LIKE LOWER(:merchant_like)
+					THEN 1
+					ELSE 2
+				END AS merchant_rank
+			FROM transactions t
+			LEFT JOIN receipts r
+				ON r.transaction_id = t.id
+			WHERE t.user_id = :user_id
+			  AND r.id IS NULL
+			  AND t.currency = :currency
+			  AND ABS(ABS(t.amount) - :total_amount) <= 1.00
+			  AND ABS(EXTRACT(EPOCH FROM (t.transaction_date - CAST(:receipt_date AS timestamptz)))) <= 172800
+			ORDER BY merchant_rank ASC, amount_difference ASC, date_difference_seconds ASC
+			LIMIT 1;
+			"""
+		),
+		{
+			"user_id": user_id,
+			"total_amount": receipt_total,
+			"receipt_date": receipt_date,
+			"merchant": merchant,
+			"merchant_like": f"%{merchant}%" if merchant else None,
+			"currency": currency,
+		},
+	).mappings().first()
+
+	if not match:
+		return None
+
+	return int(match["id"])
+
+
 @router.post("/parse-only", response_model=ReceiptParseResponse)
 async def parse_receipt(
 	image: UploadFile = File(...),
@@ -70,10 +123,21 @@ async def parse_and_save_receipt(
 		content_type=image.content_type,
 	)
 
+	resolved_transaction_id = transaction_id
+	if resolved_transaction_id is None:
+		resolved_transaction_id = find_best_transaction_id(
+			db,
+			user_id=user_id,
+			receipt_total=parsed.receipt_total,
+			receipt_date=parsed.timestamp,
+			merchant=parsed.merchant,
+			currency=parsed.currency,
+		)
+
 	saved = repository.save_parsed_receipt(
 		db,
 		user_id=user_id,
-		transaction_id=transaction_id,
+		transaction_id=resolved_transaction_id,
 		parsed_receipt=parsed,
 	)
 
