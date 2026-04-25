@@ -1,33 +1,22 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Any
+from datetime import datetime
 
 from pydantic import BaseModel, Field
 
 
-class ReceiptItem(BaseModel):
-    raw_name: str
-    normalized_name: str
-    category: str
-    price: float
-    quantity: float = 1.0
-
-
-class SavingsRecommendation(BaseModel):
-    category: str
-    message: str
-    potential_savings: float = 0.0
-
-
 class ReceiptParseResponse(BaseModel):
+    receipt_id: int | None = None
     merchant: str
-    date: date | None = None
-    total: float | None = None
+    timestamp: datetime
+    receipt_total: float
     currency: str = "EUR"
-    line_items: list[ReceiptItem] = Field(default_factory=list)
     category_totals: dict[str, float] = Field(default_factory=dict)
-    savings_recommendations: list[SavingsRecommendation] = Field(default_factory=list)
-    parsed_text: str | None = None
-    source: str = "fallback"
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    category_quantities: dict[str, float] = Field(default_factory=dict)
+    source: str = "claude"
+
+
+class ReceiptSaveRequest(BaseModel):
+    user_id: int
+    transaction_id: int | None = None
+    parsed_receipt: ReceiptParseResponse
