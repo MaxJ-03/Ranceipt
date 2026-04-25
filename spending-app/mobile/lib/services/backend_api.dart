@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthRequiredException implements Exception {
@@ -12,12 +13,6 @@ class AuthRequiredException implements Exception {
   String toString() => message;
 }
 
-class BunqAuthStartResponse {
-  final String state;
-  final String authorizationUrl;
-
-  BunqAuthStartResponse({required this.state, required this.authorizationUrl});
-}
 
 class BackendApi {
   static const String _baseUrl = String.fromEnvironment(
@@ -111,91 +106,255 @@ class BackendApi {
     await _clearStoredSessionToken();
   }
 
-  Future<BunqAuthStartResponse> startBunqOAuth() async {
-    final response = await _client.get(Uri.parse('$_baseUrl/auth/bunq/start'));
-    if (response.statusCode >= 400) {
-      throw Exception(_buildErrorMessage(response, 'bunq OAuth start failed'));
-    }
-
-    final body = jsonDecode(response.body);
-    if (body is! Map<String, dynamic>) {
-      throw Exception('Unexpected bunq start response shape');
-    }
-
-    final state = body['state']?.toString();
-    final authorizationUrl = body['authorization_url']?.toString();
-    if (state == null || state.isEmpty || authorizationUrl == null || authorizationUrl.isEmpty) {
-      throw Exception('Missing OAuth start payload');
-    }
-
-    return BunqAuthStartResponse(
-      state: state,
-      authorizationUrl: authorizationUrl,
-    );
-  }
-
-  Future<void> completeBunqOAuth({
-    required String state,
-    required String bunqUserApiKeyId,
-    required String bunqAccessToken,
-  }) async {
+  Future<void> loginWithBunqSandbox() async {
     final response = await _client.post(
-      Uri.parse('$_baseUrl/auth/bunq/complete'),
+      Uri.parse('$_baseUrl/auth/bunq/sandbox-login'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'state': state,
-        'bunq_user_api_key_id': bunqUserApiKeyId,
-        'bunq_access_token': bunqAccessToken,
-      }),
     );
 
     if (response.statusCode >= 400) {
-      throw Exception(_buildErrorMessage(response, 'bunq OAuth completion failed'));
+      throw Exception(_buildErrorMessage(response, 'bunq sandbox login failed'));
     }
 
     final body = jsonDecode(response.body);
     if (body is! Map<String, dynamic>) {
-      throw Exception('Unexpected bunq completion response shape');
+      throw Exception('Unexpected sandbox login response shape');
     }
 
     final token = body['session_token']?.toString();
     if (token == null || token.isEmpty) {
-      throw Exception('Missing session_token in bunq completion response');
+      throw Exception('Missing session_token in sandbox login response');
     }
 
     _sessionToken = token;
     await _persistSessionToken(token);
   }
 
-  Future<void> completeBunqOAuthWithCode({
-    required String state,
-    required String code,
-  }) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/auth/bunq/complete-with-code'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'state': state,
-        'code': code,
-      }),
+  Future<Map<String, dynamic>> getCurrentUser() async {
+    await ensureSession();
+
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/auth/me'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
     );
 
     if (response.statusCode >= 400) {
-      throw Exception(_buildErrorMessage(response, 'bunq OAuth code completion failed'));
+      throw Exception(_buildErrorMessage(response, 'current user fetch failed'));
     }
 
     final body = jsonDecode(response.body);
     if (body is! Map<String, dynamic>) {
-      throw Exception('Unexpected bunq code completion response shape');
+      throw Exception('Unexpected auth/me response shape');
     }
 
-    final token = body['session_token']?.toString();
-    if (token == null || token.isEmpty) {
-      throw Exception('Missing session_token in bunq code completion response');
+    return body;
+  }
+
+  Future<void> syncBunqTransactions() async {
+    await ensureSession();
+
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/bunq/transactions/sync'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'bunq transaction sync failed'));
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getReceipts() async {
+    await ensureSession();
+
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/receipts/'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'receipts fetch failed'));
     }
 
-    _sessionToken = token;
-    await _persistSessionToken(token);
+    final body = jsonDecode(response.body);
+    if (body is! List) {
+      throw Exception('Unexpected receipts response shape');
+    }
+
+    return body.whereType<Map>().map((item) {
+      return Map<String, dynamic>.from(item);
+    }).toList();
+  }
+
+  Future<Map<String, dynamic>> getParsedReceipt(int receiptId) async {
+    await ensureSession();
+
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/receipts/$receiptId'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'parsed receipt fetch failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>) {
+      throw Exception('Unexpected parsed receipt response shape');
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> uploadReceiptAndParse(XFile image) async {
+    await ensureSession();
+
+    final uri = Uri.parse('$_baseUrl/receipts/parse');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = 'Bearer $_sessionToken'
+      ..files.add(
+        await http.MultipartFile.fromPath(
+          'image',
+          image.path,
+          filename: image.name,
+        ),
+      );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'receipt parse failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>) {
+      throw Exception('Unexpected receipt parse response shape');
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> createManualReceipt({
+    required String merchant,
+    required double totalAmount,
+    String currency = 'EUR',
+  }) async {
+    await ensureSession();
+
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/receipts/'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'merchant': merchant,
+        'total_amount': totalAmount,
+        'currency': currency,
+        'items': <Map<String, dynamic>>[],
+      }),
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'manual receipt create failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>) {
+      throw Exception('Unexpected manual receipt response shape');
+    }
+
+    return body;
+  }
+
+  Future<List<Map<String, dynamic>>> getGoals() async {
+    await ensureSession();
+
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/goals/'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'goals fetch failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! List) {
+      throw Exception('Unexpected goals response shape');
+    }
+
+    return body.whereType<Map>().map((item) {
+      return Map<String, dynamic>.from(item);
+    }).toList();
+  }
+
+  Future<Map<String, dynamic>> createGoal({
+    required double amountToSave,
+    required DateTime targetDate,
+    String currency = 'EUR',
+  }) async {
+    await ensureSession();
+
+    final response = await _client.post(
+      Uri.parse('$_baseUrl/goals/'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'amount_to_save': amountToSave,
+        'currency': currency,
+        'target_date': targetDate.toUtc().toIso8601String(),
+      }),
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'goal creation failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>) {
+      throw Exception('Unexpected create goal response shape');
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> getAiInsightsForCurrentUser() async {
+    final user = await getCurrentUser();
+    final userId = int.tryParse(user['id'].toString());
+    if (userId == null) {
+      throw Exception('Could not determine current user id for AI insights');
+    }
+
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/personal-goals/$userId/insights'),
+      headers: {
+        'Authorization': 'Bearer $_sessionToken',
+      },
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception(_buildErrorMessage(response, 'AI insights fetch failed'));
+    }
+
+    final body = jsonDecode(response.body);
+    if (body is! Map<String, dynamic>) {
+      throw Exception('Unexpected AI insights response shape');
+    }
+
+    return body;
   }
 
   Future<List<Map<String, dynamic>>> getTransactions() async {
