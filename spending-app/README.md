@@ -1,123 +1,211 @@
-# Ranceipt
+Ranceipt
 
-**Smart Receipt Management, Spending Goals & Population-Based Spending Insights**
+Smart Receipt Management & Spending Goals
 
-Take control of your finances with intelligent receipt tracking, personalized spending goals, and insights into how your spending habits compare to the wider population.
+Ranceipt is a smart receipt and spending management app that helps users understand their spending habits, track receipts, sync Bunq sandbox transactions, and manage personal saving goals.
 
----
+This project is currently configured as a Bunq sandbox demo app.
 
-## The Idea
+The Idea
 
-Ranceipt transforms the way you understand and manage your spending.
+Ranceipt transforms the way you manage your spending. Instead of manually categorizing receipts or losing track of where your money goes, the app processes receipts, organizes purchases into categories, and helps users stay on track with personal financial goals.
 
-Instead of manually categorizing receipts or losing track of where your money goes, Ranceipt helps you capture receipts, organize transactions, and track your progress toward personal spending goals.
+Key Features
+Smart Receipt Recognition — Capture receipts and process receipt data
+Automatic Categorization — Organize receipt items into spending categories
+Personal Spending Goals — Set and track saving/spending targets
+Transaction Overview — View transactions and spending insights
+Bunq Sandbox Integration — Sync transactions using Bunq sandbox users
+Custom Categories — Use detailed product-level categories for receipt items
+Demo Data Seeding — Populate the database with sample users, transactions, receipts, and goals
+Tech Stack
+Backend
+Python
+FastAPI
+PostgreSQL
+Docker Compose
+Bunq Sandbox API
+Frontend
+Flutter
+Dart
+Prerequisites
 
-What makes Ranceipt different is its ability to show how your spending habits rank compared to the population. By comparing your spending patterns against broader, anonymized spending data, Ranceipt helps you understand whether you spend more, less, or about the same as others in categories such as groceries, restaurants, shopping, transport, subscriptions, and more.
+Install the following before running the project:
 
-Whether you're trying to budget better, reduce unnecessary spending, or understand your financial behavior, Ranceipt makes your spending easier to track and compare.
+Docker Desktop
+Python 3.12+
+Flutter
+Git
 
----
+Make sure Docker Desktop is running before starting the database.
 
-## Key Features
+Project Structure
+spending-app/
+  backend/
+    app/
+    docker-compose.yml
+    ranceipt_db_init.sql
+    requirements.txt
+    .env
 
-- **Smart Receipt Recognition**  
-  Capture receipts with your camera and automatically extract useful transaction details.
+  mobile/
+    lib/
+    pubspec.yaml
+Environment Setup
 
-- **Automatic Categorization**  
-  Receipts and transactions are organized into clear spending categories.
+Create a .env file inside the backend/ folder:
 
-- **Spending Habit Ranking**  
-  See how your spending compares to the population across different categories.
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=spending_app
+DB_ECHO=false
 
-- **Population-Based Benchmarks**  
-  Understand whether you are spending above average, below average, or within a normal range compared to others.
+BUNQ_API_BASE_URL=https://public-api.sandbox.bunq.com/v1
+BUNQ_SANDBOX_API_KEY=your_bunq_sandbox_api_key_here
 
-- **Personal Spending Goals**  
-  Set spending targets for categories such as food, entertainment, shopping, transport, and subscriptions.
+APP_SECRET_KEY=change-this-secret
+TOKEN_ENCRYPTION_KEY=your_token_encryption_key_here
 
-- **Transaction Overview**  
-  View all your receipts and bank transactions in one place with simple, clear insights.
+Generate a token encryption key:
 
-- **Bank Integration**  
-  Connect with your Bunq account for seamless transaction syncing.
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
-- **AI Suggestions**  
-  Receive helpful suggestions based on your spending behavior, such as areas where you may be overspending or opportunities to save.
+Copy the generated value into:
 
----
+TOKEN_ENCRYPTION_KEY=
+Database Setup
 
-## Spending Habit Ranking
+From the backend folder, start Postgres:
 
-Ranceipt helps you answer questions like:
+cd backend
+docker compose up -d
 
-- Am I spending more on groceries than most people?
-- How does my restaurant spending compare to others?
-- Do I spend less on transport than the average user?
-- Which categories are my strongest and weakest spending areas?
-- Where do I rank compared to the wider population?
+This starts a PostgreSQL container and initializes the database using:
 
-Your spending habits can be ranked by category, helping you better understand your financial behavior in context. Instead of only seeing numbers, Ranceipt shows what those numbers mean compared to real-world spending patterns.
+ranceipt_db_init.sql
 
-For example, you may discover that your grocery spending is below average, but your restaurant spending is higher than most people. These comparisons make it easier to identify where your money is going and where you may want to improve.
+Check that the container is running:
 
----
+docker ps
 
-## AI Suggestions
+You should see a container named:
 
-Alongside spending rankings, Ranceipt can provide intelligent suggestions to help you improve your financial habits.
+spending_postgres
+Resetting the Database
 
-These suggestions may include:
+If the database was already created before, the init SQL file will not run again automatically.
 
-- Reducing spending in categories where you rank higher than average
-- Setting realistic goals based on your current behavior
-- Identifying repeated expenses or subscriptions
-- Highlighting categories where small changes could make a big difference
+To reset the database:
 
-AI suggestions are designed to support your decisions, not replace them. You stay in control of your goals and financial choices.
+docker compose down -v
+docker compose up -d
 
----
+Warning: this deletes all local database data.
 
-## Why Ranceipt?
+Backend Setup
 
-Managing finances should be simple, clear, and useful. Ranceipt helps by giving you both personal insights and population-based comparisons.
+From the backend folder:
 
-- **Know Where You Stand**  
-  Compare your spending habits with the wider population.
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 
-- **Understand Your Habits**  
-  See which categories you spend the most on and how they rank.
+Run the backend:
 
-- **Save Time**  
-  No more manual entry; just snap and save.
+python -m uvicorn app.main:app --reload --reload-dir app
 
-- **Stay on Track**  
-  Set goals and monitor your progress over time.
+The backend runs at:
 
-- **Make Smarter Decisions**  
-  Use rankings, benchmarks, and AI suggestions to improve your financial habits.
+http://127.0.0.1:8000
 
-- **Peace of Mind**  
-  Always know where your money is going and how your spending compares.
+API documentation:
 
----
+http://127.0.0.1:8000/docs
 
-## Getting Started
+Health check:
 
-1. Download the Ranceipt app
-2. Create your account
-3. Connect your Bunq account if desired
-4. Set your spending goals
-5. Start capturing receipts
-6. View your rankings and spending insights
+http://127.0.0.1:8000/health
 
-That’s it! Your financial journey begins here.
+Expected response:
 
----
+{
+  "status": "ok"
+}
+Demo Data
 
-## Support
+The project includes a demo seeding flow for local testing.
 
-Have questions, feedback, or suggestions? We’d love to hear from you.
+In Swagger, run:
 
----
+POST /demo/seed
 
-*Ranceipt — Your finances, ranked, tracked, and simplified.*
+Then check the seeded data:
+
+GET /demo/status
+
+This populates the database with sample:
+
+users
+Bunq sandbox connection records
+transactions
+receipts
+receipt items
+saving goals
+Bunq Sandbox Login
+
+This project is configured for Bunq sandbox-only authentication.
+
+The app does not use real Bunq OAuth in the demo setup.
+
+The active login flow is:
+
+POST /auth/bunq/sandbox-login
+
+The backend uses:
+
+BUNQ_SANDBOX_API_KEY=
+
+to authenticate against the Bunq sandbox environment and create an internal app session.
+
+The frontend then uses the returned session token for protected API requests.
+
+Flutter Setup
+
+Open a new terminal and go to the mobile folder:
+
+cd mobile
+flutter pub get
+
+Run the app in Chrome:
+
+flutter run -d chrome
+
+For Flutter web, the backend base URL should be:
+
+http://127.0.0.1:8000
+
+For Android emulator, use:
+
+http://10.0.2.2:8000
+Recommended Local Run Order
+Terminal 1: Database
+cd backend
+docker compose up -d
+Terminal 2: Backend
+cd backend
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --reload --reload-dir app
+Terminal 3: Flutter
+cd mobile
+flutter pub get
+flutter run -d chrome
+Demo Flow
+Start Docker/Postgres.
+Start the FastAPI backend.
+Start the Flutter app.
+Click Continue with bunq.
+The app logs in using the Bunq sandbox setup.
+Seed demo data using POST /demo/seed if needed.
+View transactions, receipts, goals, and dashboard data.
