@@ -11,15 +11,18 @@ class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  State<DashboardScreen> createState() => _DashboardScreenState();
+  State<DashboardScreen> createState() => DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class DashboardScreenState extends State<DashboardScreen> {
   int selectedIndex = 0;
 
   Widget buildCurrentPage() {
     if (selectedIndex == 0) {
-      return HomeView(onAddReceipt: () => showAddReceiptOptions(context));
+      return DashboardHome(
+        onAddReceipt: () => showAddReceiptOptions(context),
+        onAddGoal: () => showGoalSheet(context),
+      );
     }
 
     if (selectedIndex == 1) {
@@ -53,7 +56,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
-                SheetAction(
+                DashboardSheetAction(
                   icon: Icons.document_scanner_outlined,
                   title: 'Scan receipt',
                   subtitle: 'Use camera',
@@ -64,7 +67,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
                 const SizedBox(height: 10),
-                SheetAction(
+                DashboardSheetAction(
                   icon: Icons.image_outlined,
                   title: 'Upload photo',
                   subtitle: 'Choose from gallery',
@@ -75,7 +78,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
                 const SizedBox(height: 10),
-                SheetAction(
+                DashboardSheetAction(
                   icon: Icons.edit_note_outlined,
                   title: 'Manual entry',
                   subtitle: 'Add purchase manually',
@@ -89,6 +92,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         );
+      },
+    );
+  }
+
+  void showGoalSheet(BuildContext context) {
+    final provider = Provider.of<ReceiptProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      barrierColor: Colors.black.withOpacity(0.55),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (context) {
+        return DashboardAddGoalSheet(provider: provider);
       },
     );
   }
@@ -163,18 +183,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class HomeView extends StatelessWidget {
+class DashboardHome extends StatefulWidget {
   final VoidCallback onAddReceipt;
+  final VoidCallback onAddGoal;
 
-  const HomeView({super.key, required this.onAddReceipt});
+  const DashboardHome({
+    super.key,
+    required this.onAddReceipt,
+    required this.onAddGoal,
+  });
+
+  @override
+  State<DashboardHome> createState() => DashboardHomeState();
+}
+
+class DashboardHomeState extends State<DashboardHome> {
+  bool showAdvice = false;
 
   @override
   Widget build(BuildContext context) {
     return Consumer<ReceiptProvider>(
       builder: (context, provider, child) {
         final analytics = provider.getAnalytics();
-        final topItems = analytics.topItemCategories.take(4).toList();
-        final topItem = topItems.isNotEmpty ? topItems.first : null;
+        final categories = analytics.topItemCategories;
+        final topCategory = categories.isNotEmpty ? categories.first : null;
+        final topSpendingCategories = categories.take(4).toList();
+        final goal = analytics.activeGoal;
 
         return ListView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
@@ -185,17 +219,29 @@ class HomeView extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const TopBar(),
+                    const DashboardTopBar(),
                     const SizedBox(height: 24),
-                    if (topItem == null)
-                      EmptyHeroCard(onAddReceipt: onAddReceipt)
-                    else
-                      HeroCard(category: topItem, onAddReceipt: onAddReceipt),
+                    DashboardMainActionCard(
+                      topCategory: topCategory,
+                      goal: goal,
+                      showAdvice: showAdvice,
+                      onAddReceipt: widget.onAddReceipt,
+                      onGenerateAdvice: () {
+                        setState(() {
+                          showAdvice = true;
+                        });
+                      },
+                      onResetAdvice: () {
+                        setState(() {
+                          showAdvice = false;
+                        });
+                      },
+                    ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
-                          child: MetricCard(
+                          child: DashboardMetricCard(
                             label: 'Spent',
                             value:
                                 '€${analytics.totalSpending.toStringAsFixed(0)}',
@@ -205,7 +251,7 @@ class HomeView extends StatelessWidget {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: MetricCard(
+                          child: DashboardMetricCard(
                             label: 'Receipts',
                             value: '${analytics.transactionCount}',
                             icon: Icons.receipt_long_outlined,
@@ -214,23 +260,26 @@ class HomeView extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 28),
+                    DashboardGoalPreview(
+                      goal: goal,
+                      onAddGoal: widget.onAddGoal,
+                    ),
                     const SizedBox(height: 32),
-                    const SectionHeader(
-                      title: 'Top categories',
-                      subtitle: 'Your strongest spending signals',
+                    const DashboardSectionHeader(
+                      title: 'Top spending',
+                      subtitle: 'Grouped from receipt items',
                     ),
                     const SizedBox(height: 16),
-                    if (topItems.isEmpty)
-                      const EmptyText('No category data yet.')
+                    if (topSpendingCategories.isEmpty)
+                      const DashboardEmptyText('No category data yet.')
                     else
-                      ...topItems.map((item) => CategoryRow(category: item)),
-                    const SizedBox(height: 32),
-                    const SectionHeader(
-                      title: 'Insights',
-                      subtitle: 'Simple actions, clear impact',
-                    ),
-                    const SizedBox(height: 16),
-                    ...buildInsights(analytics),
+                      ...topSpendingCategories.map(
+                        (item) => DashboardCategoryRow(
+                          category: item,
+                          totalSpending: analytics.totalSpending,
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -240,63 +289,10 @@ class HomeView extends StatelessWidget {
       },
     );
   }
-
-  List<Widget> buildInsights(SpendingAnalytics analytics) {
-    if (analytics.topItemCategories.isEmpty) {
-      return const [
-        InsightCard(
-          icon: Icons.document_scanner_outlined,
-          title: 'Start with one receipt',
-          text: 'Scan a receipt to unlock rankings and suggestions.',
-          color: AppColors.primary,
-        ),
-      ];
-    }
-
-    final top = analytics.topItemCategories.first;
-    final high = analytics.topItemCategories
-        .where((item) => item.percentile >= 80)
-        .toList();
-
-    final topVisual = dashboardCategoryVisual(top.itemCategory, top.percentile);
-
-    final cards = <Widget>[
-      InsightCard(
-        icon: topVisual.icon,
-        title: 'Highest rank',
-        text: '${top.itemCategory} is your strongest category.',
-        color: topVisual.color,
-      ),
-    ];
-
-    if (high.isNotEmpty) {
-      cards.add(const SizedBox(height: 12));
-      cards.add(
-        InsightCard(
-          icon: Icons.trending_up_rounded,
-          title: 'High-spend signal',
-          text: high.map((c) => c.itemCategory).join(', '),
-          color: AppColors.rose,
-        ),
-      );
-    }
-
-    cards.add(const SizedBox(height: 12));
-    cards.add(
-      const InsightCard(
-        icon: Icons.savings_outlined,
-        title: 'Saving move',
-        text: 'Reduce your highest-ranked category by 20%.',
-        color: AppColors.green,
-      ),
-    );
-
-    return cards;
-  }
 }
 
-class TopBar extends StatelessWidget {
-  const TopBar({super.key});
+class DashboardTopBar extends StatelessWidget {
+  const DashboardTopBar({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -338,22 +334,60 @@ class TopBar extends StatelessWidget {
   }
 }
 
-class HeroCard extends StatelessWidget {
-  final ItemCategorySpending category;
+class DashboardMainActionCard extends StatelessWidget {
+  final ItemCategorySpending? topCategory;
+  final PersonalGoal? goal;
+  final bool showAdvice;
   final VoidCallback onAddReceipt;
+  final VoidCallback onGenerateAdvice;
+  final VoidCallback onResetAdvice;
 
-  const HeroCard({
+  const DashboardMainActionCard({
     super.key,
-    required this.category,
+    required this.topCategory,
+    required this.goal,
+    required this.showAdvice,
     required this.onAddReceipt,
+    required this.onGenerateAdvice,
+    required this.onResetAdvice,
   });
 
   @override
   Widget build(BuildContext context) {
-    final visual = dashboardCategoryVisual(
-      category.itemCategory,
-      category.percentile,
-    );
+    final hasData = topCategory != null;
+    final hasGoal = goal != null;
+
+    final categoryName = topCategory?.itemCategory ?? 'your spending';
+    final categoryAmount = topCategory?.amount ?? 0;
+    final suggestedCut = categoryAmount * 0.20;
+
+    double progress = 0;
+    if (hasGoal && goal!.amountToSave > 0) {
+      progress = suggestedCut / goal!.amountToSave;
+      if (progress > 1) progress = 1;
+      if (progress < 0) progress = 0;
+    }
+
+    final color = hasData
+        ? dashboardCategoryColor(categoryName)
+        : AppColors.aqua;
+
+    final icon = hasData
+        ? categoryIcon(categoryName)
+        : Icons.document_scanner_outlined;
+
+    String adviceText;
+
+    if (!hasData) {
+      adviceText =
+          'Add a receipt first. Then AI advice can estimate where saving has the biggest impact.';
+    } else if (!hasGoal) {
+      adviceText =
+          'Your biggest category is $categoryName. Set a savings goal to turn this into a concrete plan.';
+    } else {
+      adviceText =
+          'Saving €${suggestedCut.toStringAsFixed(0)} from $categoryName would get you ${(progress * 100).toStringAsFixed(0)}% closer to your €${goal!.amountToSave.toStringAsFixed(0)} goal.';
+    }
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -372,136 +406,153 @@ class HeroCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          DashboardIconBadge(icon: icon, color: color),
+          const SizedBox(height: 20),
           const Text(
-            'Top percentile',
+            'Capture and improve',
             style: TextStyle(
-              color: AppColors.muted,
-              fontSize: 15,
+              color: AppColors.text,
+              fontSize: 28,
               fontWeight: FontWeight.bold,
+              letterSpacing: -0.8,
+              height: 1.08,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          const Text(
+            'Add receipts to build your spending history. Generate advice when you want a saving move.',
+            style: TextStyle(color: AppColors.muted, fontSize: 16, height: 1.4),
+          ),
+          const SizedBox(height: 22),
           Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              MiniRing(
-                value: category.percentile / 100,
-                color: visual.color,
-                icon: visual.icon,
-              ),
-              const SizedBox(width: 20),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      category.itemCategory,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: AppColors.text,
-                        fontSize: 28,
+                child: SizedBox(
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: onAddReceipt,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text(
+                      'Receipt',
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        letterSpacing: -1,
-                        height: 1.08,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'More than ${category.percentile.toStringAsFixed(1)}% of users',
-                      style: const TextStyle(
-                        color: AppColors.muted,
                         fontSize: 16,
-                        height: 1.35,
                       ),
                     ),
-                  ],
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.aqua,
+                      foregroundColor: AppColors.bg,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: showAdvice ? onResetAdvice : onGenerateAdvice,
+                    icon: Icon(
+                      showAdvice
+                          ? Icons.refresh_rounded
+                          : Icons.auto_awesome_outlined,
+                    ),
+                    label: Text(
+                      showAdvice ? 'Reset' : 'Advice',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: showAdvice
+                          ? AppColors.surfaceSoft
+                          : AppColors.primary,
+                      foregroundColor: AppColors.text,
+                      side: showAdvice
+                          ? const BorderSide(color: AppColors.border)
+                          : BorderSide.none,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: onAddReceipt,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text(
-                'Add receipt',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          if (showAdvice) const SizedBox(height: 18),
+          if (showAdvice)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.bg.withOpacity(0.36),
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: Colors.white.withOpacity(0.08)),
               ),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.aqua,
-                foregroundColor: AppColors.bg,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      DashboardIconBadge(
+                        icon: hasData
+                            ? categoryIcon(categoryName)
+                            : Icons.auto_awesome_outlined,
+                        color: hasData ? color : AppColors.primary,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          hasData ? categoryName : 'Advice preview',
+                          style: const TextStyle(
+                            color: AppColors.text,
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    adviceText,
+                    style: const TextStyle(
+                      color: AppColors.muted,
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (hasData && hasGoal) const SizedBox(height: 16),
+                  if (hasData && hasGoal)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 9,
+                        backgroundColor: Colors.white.withOpacity(0.12),
+                        color: color,
+                      ),
+                    ),
+                ],
               ),
             ),
-          ),
         ],
       ),
     );
   }
 }
 
-class MiniRing extends StatelessWidget {
-  final double value;
-  final Color color;
-  final IconData icon;
-
-  const MiniRing({
-    super.key,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: value),
-      duration: const Duration(milliseconds: 900),
-      curve: Curves.easeOutCubic,
-      builder: (context, animated, child) {
-        return SizedBox(
-          width: 96,
-          height: 96,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              CircularProgressIndicator(
-                value: animated,
-                strokeWidth: 8,
-                strokeCap: StrokeCap.round,
-                backgroundColor: Colors.white.withOpacity(0.10),
-                color: color,
-              ),
-              Container(
-                height: 56,
-                width: 56,
-                decoration: BoxDecoration(
-                  color: AppColors.bg.withOpacity(0.34),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(icon, color: color, size: 27),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class MetricCard extends StatelessWidget {
+class DashboardMetricCard extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
   final Color accent;
 
-  const MetricCard({
+  const DashboardMetricCard({
     super.key,
     required this.label,
     required this.value,
@@ -522,7 +573,7 @@ class MetricCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CategoryIconBadge(icon: icon, color: accent),
+          DashboardIconBadge(icon: icon, color: accent),
           const SizedBox(height: 16),
           Text(
             label,
@@ -548,23 +599,108 @@ class MetricCard extends StatelessWidget {
   }
 }
 
-class CategoryRow extends StatelessWidget {
-  final ItemCategorySpending category;
+class DashboardGoalPreview extends StatelessWidget {
+  final PersonalGoal? goal;
+  final VoidCallback onAddGoal;
 
-  const CategoryRow({super.key, required this.category});
+  const DashboardGoalPreview({
+    super.key,
+    required this.goal,
+    required this.onAddGoal,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final visual = dashboardCategoryVisual(
-      category.itemCategory,
-      category.percentile,
+    final hasGoal = goal != null;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          DashboardIconBadge(
+            icon: hasGoal ? Icons.flag_outlined : Icons.add_task_outlined,
+            color: hasGoal ? AppColors.green : AppColors.aqua,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasGoal
+                      ? '€${goal!.amountToSave.toStringAsFixed(0)} goal'
+                      : 'No goal set',
+                  style: const TextStyle(
+                    color: AppColors.text,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  hasGoal
+                      ? '${goal!.daysLeft} days left'
+                      : 'Add a saving target',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            height: 44,
+            child: FilledButton(
+              onPressed: onAddGoal,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.aqua,
+                foregroundColor: AppColors.bg,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              child: Text(
+                hasGoal ? 'Edit' : 'Add',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+}
+
+class DashboardCategoryRow extends StatelessWidget {
+  final ItemCategorySpending category;
+  final double totalSpending;
+
+  const DashboardCategoryRow({
+    super.key,
+    required this.category,
+    required this.totalSpending,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = dashboardCategoryColor(category.itemCategory);
+    final icon = categoryIcon(category.itemCategory);
+
+    double share = 0;
+    if (totalSpending > 0) {
+      share = category.amount / totalSpending;
+      if (share > 1) share = 1;
+      if (share < 0) share = 0;
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: Row(
         children: [
-          CategoryIconBadge(icon: visual.icon, color: visual.color),
+          DashboardIconBadge(icon: icon, color: color),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -581,42 +717,26 @@ class CategoryRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: category.percentile / 100),
-                  duration: const Duration(milliseconds: 850),
-                  curve: Curves.easeOutCubic,
-                  builder: (context, value, child) {
-                    return ClipRRect(
-                      borderRadius: BorderRadius.circular(99),
-                      child: LinearProgressIndicator(
-                        value: value,
-                        minHeight: 8,
-                        backgroundColor: AppColors.surfaceSoft,
-                        color: visual.color,
-                      ),
-                    );
-                  },
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: share,
+                    minHeight: 8,
+                    backgroundColor: AppColors.surfaceSoft,
+                    color: color,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '${category.percentile.toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: AppColors.text,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Text(
-                '€${category.amount.toStringAsFixed(0)}',
-                style: const TextStyle(color: AppColors.muted, fontSize: 13),
-              ),
-            ],
+          Text(
+            '€${category.amount.toStringAsFixed(0)}',
+            style: const TextStyle(
+              color: AppColors.text,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -624,11 +744,15 @@ class CategoryRow extends StatelessWidget {
   }
 }
 
-class CategoryIconBadge extends StatelessWidget {
+class DashboardIconBadge extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  const CategoryIconBadge({super.key, required this.icon, required this.color});
+  const DashboardIconBadge({
+    super.key,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -644,137 +768,15 @@ class CategoryIconBadge extends StatelessWidget {
   }
 }
 
-class InsightCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String text;
-  final Color color;
-
-  const InsightCard({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.text,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CategoryIconBadge(icon: icon, color: color),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AppColors.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  text,
-                  style: const TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 15,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class EmptyHeroCard extends StatelessWidget {
-  final VoidCallback onAddReceipt;
-
-  const EmptyHeroCard({super.key, required this.onAddReceipt});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: AppColors.heroGradient,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.16),
-            blurRadius: 28,
-            offset: const Offset(0, 18),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const CategoryIconBadge(
-            icon: Icons.document_scanner_outlined,
-            color: AppColors.aqua,
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'No rankings yet',
-            style: TextStyle(
-              color: AppColors.text,
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              letterSpacing: -0.8,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Scan receipts to build your spending profile.',
-            style: TextStyle(color: AppColors.muted, fontSize: 16, height: 1.4),
-          ),
-          const SizedBox(height: 22),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: FilledButton.icon(
-              onPressed: onAddReceipt,
-              icon: const Icon(Icons.add_rounded),
-              label: const Text(
-                'Add receipt',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.aqua,
-                foregroundColor: AppColors.bg,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class SectionHeader extends StatelessWidget {
+class DashboardSectionHeader extends StatelessWidget {
   final String title;
   final String subtitle;
 
-  const SectionHeader({super.key, required this.title, required this.subtitle});
+  const DashboardSectionHeader({
+    super.key,
+    required this.title,
+    required this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -800,10 +802,10 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
-class EmptyText extends StatelessWidget {
+class DashboardEmptyText extends StatelessWidget {
   final String text;
 
-  const EmptyText(this.text, {super.key});
+  const DashboardEmptyText(this.text, {super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -814,14 +816,14 @@ class EmptyText extends StatelessWidget {
   }
 }
 
-class SheetAction extends StatelessWidget {
+class DashboardSheetAction extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
   final Color color;
   final VoidCallback onTap;
 
-  const SheetAction({
+  const DashboardSheetAction({
     super.key,
     required this.icon,
     required this.title,
@@ -856,103 +858,315 @@ class SheetAction extends StatelessWidget {
   }
 }
 
-class DashboardCategoryVisual {
-  final IconData icon;
-  final Color color;
+class DashboardAddGoalSheet extends StatefulWidget {
+  final ReceiptProvider provider;
 
-  const DashboardCategoryVisual({required this.icon, required this.color});
+  const DashboardAddGoalSheet({super.key, required this.provider});
+
+  @override
+  State<DashboardAddGoalSheet> createState() => DashboardAddGoalSheetState();
 }
 
-DashboardCategoryVisual dashboardCategoryVisual(
-  String category,
-  double percentile,
-) {
+class DashboardAddGoalSheetState extends State<DashboardAddGoalSheet> {
+  final TextEditingController amountController = TextEditingController();
+  int selectedDays = 30;
+
+  @override
+  void dispose() {
+    amountController.dispose();
+    super.dispose();
+  }
+
+  void saveGoal() {
+    final amount = double.tryParse(amountController.text.replaceAll(',', '.'));
+
+    if (amount == null || amount <= 0) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a valid amount.')));
+      return;
+    }
+
+    widget.provider.addPersonalGoal(
+      amountToSave: amount,
+      targetDate: DateTime.now().add(Duration(days: selectedDays)),
+    );
+
+    Navigator.pop(context);
+  }
+
+  void setDays(int days) {
+    setState(() {
+      selectedDays = days;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          MediaQuery.of(context).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 44,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: AppColors.faint,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+            ),
+            const Row(
+              children: [
+                DashboardIconBadge(
+                  icon: Icons.flag_outlined,
+                  color: AppColors.green,
+                ),
+                SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'Savings goal',
+                    style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            TextField(
+              controller: amountController,
+              keyboardType: TextInputType.number,
+              style: const TextStyle(
+                color: AppColors.text,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: AppColors.surfaceSoft,
+                prefixText: '€ ',
+                prefixStyle: const TextStyle(
+                  color: AppColors.text,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+                hintText: '250',
+                hintStyle: const TextStyle(color: AppColors.faint),
+                labelText: 'Amount to save',
+                labelStyle: const TextStyle(color: AppColors.muted),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(18),
+                  borderSide: const BorderSide(color: AppColors.aqua),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Time period',
+                    style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Text(
+                  '$selectedDays days',
+                  style: const TextStyle(
+                    color: AppColors.aqua,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                DashboardGoalDayButton(
+                  label: '30',
+                  selected: selectedDays == 30,
+                  onTap: () {
+                    setDays(30);
+                  },
+                ),
+                const SizedBox(width: 10),
+                DashboardGoalDayButton(
+                  label: '60',
+                  selected: selectedDays == 60,
+                  onTap: () {
+                    setDays(60);
+                  },
+                ),
+                const SizedBox(width: 10),
+                DashboardGoalDayButton(
+                  label: '90',
+                  selected: selectedDays == 90,
+                  onTap: () {
+                    setDays(90);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                activeTrackColor: AppColors.aqua,
+                inactiveTrackColor: AppColors.surfaceSoft,
+                thumbColor: AppColors.aqua,
+                overlayColor: AppColors.aqua.withOpacity(0.14),
+                valueIndicatorColor: AppColors.surfaceSoft,
+                valueIndicatorTextStyle: const TextStyle(
+                  color: AppColors.text,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              child: Slider(
+                value: selectedDays.toDouble(),
+                min: 30,
+                max: 360,
+                divisions: 330,
+                label: '$selectedDays days',
+                onChanged: (value) {
+                  setState(() {
+                    selectedDays = value.round();
+                  });
+                },
+              ),
+            ),
+            const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '30 days',
+                  style: TextStyle(color: AppColors.faint, fontSize: 13),
+                ),
+                Text(
+                  '360 days',
+                  style: TextStyle(color: AppColors.faint, fontSize: 13),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: FilledButton.icon(
+                onPressed: saveGoal,
+                icon: const Icon(Icons.check_rounded),
+                label: const Text(
+                  'Save goal',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.aqua,
+                  foregroundColor: AppColors.bg,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class DashboardGoalDayButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const DashboardGoalDayButton({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: SizedBox(
+        height: 48,
+        child: OutlinedButton(
+          onPressed: onTap,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: selected ? AppColors.aqua : AppColors.surfaceSoft,
+            foregroundColor: selected ? AppColors.bg : AppColors.text,
+            side: BorderSide(
+              color: selected ? AppColors.aqua : AppColors.border,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color dashboardCategoryColor(String category) {
   final name = category.toLowerCase();
 
   if (name.contains('coffee') ||
-      name.contains('latte') ||
-      name.contains('cappuccino')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.local_cafe_outlined,
-      color: AppColors.amber,
-    );
+      name.contains('tea') ||
+      name.contains('bakery') ||
+      name.contains('grains')) {
+    return AppColors.amber;
   }
 
-  if (name.contains('pet') || name.contains('dog') || name.contains('cat')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.pets_outlined,
-      color: AppColors.green,
-    );
+  if (name.contains('fruit') ||
+      name.contains('vegetable') ||
+      name.contains('pets') ||
+      name.contains('health')) {
+    return AppColors.green;
   }
 
-  if (name.contains('beef') ||
-      name.contains('meat') ||
-      name.contains('steak')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.dinner_dining_outlined,
-      color: AppColors.rose,
-    );
+  if (name.contains('meat') ||
+      name.contains('poultry') ||
+      name.contains('ready meals') ||
+      name.contains('snacks') ||
+      name.contains('alcohol') ||
+      name.contains('nicotine')) {
+    return AppColors.rose;
   }
 
-  if (name.contains('chicken')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.lunch_dining_outlined,
-      color: AppColors.amber,
-    );
+  if (name.contains('fish') ||
+      name.contains('dairy') ||
+      name.contains('drinks') ||
+      name.contains('household') ||
+      name.contains('personal care')) {
+    return AppColors.aqua;
   }
 
-  if (name.contains('pasta') || name.contains('noodle')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.ramen_dining_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (name.contains('grocery') ||
-      name.contains('groceries') ||
-      name.contains('supermarket')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.shopping_basket_outlined,
-      color: AppColors.green,
-    );
-  }
-
-  if (name.contains('restaurant') ||
-      name.contains('food') ||
-      name.contains('dinner')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.restaurant_outlined,
-      color: AppColors.rose,
-    );
-  }
-
-  if (name.contains('transport') ||
-      name.contains('train') ||
-      name.contains('uber') ||
-      name.contains('taxi')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.directions_transit_outlined,
-      color: AppColors.primary,
-    );
-  }
-
-  if (name.contains('subscription') ||
-      name.contains('phone') ||
-      name.contains('app')) {
-    return const DashboardCategoryVisual(
-      icon: Icons.phone_iphone_outlined,
-      color: AppColors.aqua,
-    );
-  }
-
-  return DashboardCategoryVisual(
-    icon: Icons.category_outlined,
-    color: rankColor(percentile),
-  );
-}
-
-Color rankColor(double percentile) {
-  if (percentile >= 90) return AppColors.rose;
-  if (percentile >= 70) return AppColors.amber;
-  return AppColors.green;
+  return AppColors.primary;
 }
