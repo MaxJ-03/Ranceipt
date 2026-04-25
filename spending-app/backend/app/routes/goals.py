@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
-from psycopg import Connection
 from pydantic import BaseModel
 from datetime import datetime
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 from app.database import get_db
 from app.routes.auth import get_current_user
 
@@ -17,11 +18,11 @@ class CreateGoalRequest(BaseModel):
 @router.post("/")
 def create_goal(
     body: CreateGoalRequest,
-    db: Connection = Depends(get_db),
+    db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    with db.cursor() as cur:
-        cur.execute(
+    goal = db.execute(
+        text(
             """
             INSERT INTO personal_goals (
                 user_id,
@@ -29,18 +30,17 @@ def create_goal(
                 currency,
                 target_date
             )
-            VALUES (%s, %s, %s, %s)
+            VALUES (:user_id, :amount_to_save, :currency, :target_date)
             RETURNING id, user_id, amount_to_save, currency, target_date, created_at;
-            """,
-            (
-                user["id"],
-                body.amount_to_save,
-                body.currency,
-                body.target_date,
-            ),
-        )
-
-        goal = cur.fetchone()
+            """
+        ),
+        {
+            "user_id": user["id"],
+            "amount_to_save": body.amount_to_save,
+            "currency": body.currency,
+            "target_date": body.target_date,
+        },
+    ).mappings().first()
 
     db.commit()
     return goal
@@ -48,11 +48,11 @@ def create_goal(
 
 @router.get("/")
 def get_my_goals(
-    db: Connection = Depends(get_db),
+    db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    with db.cursor() as cur:
-        cur.execute(
+    return db.execute(
+        text(
             """
             SELECT
                 id,
@@ -62,32 +62,33 @@ def get_my_goals(
                 target_date,
                 created_at
             FROM personal_goals
-            WHERE user_id = %s
+            WHERE user_id = :user_id
             ORDER BY target_date ASC;
-            """,
-            (user["id"],),
-        )
-
-        return cur.fetchall()
+            """
+        ),
+        {"user_id": user["id"]},
+    ).mappings().all()
 
 
 @router.delete("/{goal_id}")
 def delete_goal(
     goal_id: int,
-    db: Connection = Depends(get_db),
+    db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    with db.cursor() as cur:
-        cur.execute(
+    deleted = db.execute(
+        text(
             """
             DELETE FROM personal_goals
-            WHERE id = %s AND user_id = %s
+            WHERE id = :goal_id AND user_id = :user_id
             RETURNING id;
-            """,
-            (goal_id, user["id"]),
-        )
-
-        deleted = cur.fetchone()
+            """
+        ),
+        {
+            "goal_id": goal_id,
+            "user_id": user["id"],
+        },
+    ).mappings().first()
 
     db.commit()
 

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../models/receipt.dart';
+import '../providers/receipt_provider.dart';
 import '../theme/app_colors.dart';
 
 class ReceiptListScreen extends StatelessWidget {
@@ -7,40 +10,8 @@ class ReceiptListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final receipts = [
-      const ReceiptData(
-        merchant: 'Starbucks',
-        category: 'Coffee',
-        amount: 14.30,
-        date: 'Today',
-        itemCount: 3,
-        icon: Icons.local_cafe_outlined,
-      ),
-      const ReceiptData(
-        merchant: 'Albert Heijn',
-        category: 'Groceries',
-        amount: 42.80,
-        date: 'Yesterday',
-        itemCount: 8,
-        icon: Icons.shopping_basket_outlined,
-      ),
-      const ReceiptData(
-        merchant: 'Uber Eats',
-        category: 'Restaurants',
-        amount: 27.50,
-        date: '2 days ago',
-        itemCount: 4,
-        icon: Icons.restaurant_outlined,
-      ),
-      const ReceiptData(
-        merchant: 'NS',
-        category: 'Transport',
-        amount: 18.20,
-        date: '3 days ago',
-        itemCount: 1,
-        icon: Icons.train_outlined,
-      ),
-    ];
+    final provider = context.watch<ReceiptProvider>();
+    final receipts = provider.receipts.map(_toReceiptData).toList();
 
     return Container(
       color: AppColors.bg,
@@ -66,7 +37,13 @@ class ReceiptListScreen extends StatelessWidget {
                     subtitle: 'Latest scanned receipts',
                   ),
                   const SizedBox(height: 16),
-                  ...receipts.map((receipt) => ReceiptRow(receipt: receipt)),
+                  if (receipts.isEmpty)
+                    const Text(
+                      'No receipts yet.',
+                      style: TextStyle(color: AppColors.muted, fontSize: 15),
+                    )
+                  else
+                    ...receipts.map((receipt) => ReceiptRow(receipt: receipt)),
                 ],
               ),
             ),
@@ -74,6 +51,55 @@ class ReceiptListScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  ReceiptData _toReceiptData(Receipt receipt) {
+    final firstItem = receipt.lineItems.isNotEmpty ? receipt.lineItems.first : null;
+    final category = firstItem?.detailedCategory ?? 'Uncategorized';
+
+    return ReceiptData(
+      merchant: receipt.storeName,
+      category: category,
+      amount: receipt.total,
+      date: _relativeDate(receipt.date),
+      itemCount: receipt.lineItems.length,
+      icon: _iconForCategory(category),
+    );
+  }
+
+  String _relativeDate(DateTime date) {
+    final today = DateTime.now();
+    final normalizedToday = DateTime(today.year, today.month, today.day);
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final dayDiff = normalizedToday.difference(normalizedDate).inDays;
+
+    if (dayDiff <= 0) {
+      return 'Today';
+    }
+
+    if (dayDiff == 1) {
+      return 'Yesterday';
+    }
+
+    return '$dayDiff days ago';
+  }
+
+  IconData _iconForCategory(String category) {
+    final normalized = category.toLowerCase();
+
+    if (normalized.contains('coffee') || normalized.contains('tea')) {
+      return Icons.local_cafe_outlined;
+    }
+
+    if (normalized.contains('transport') || normalized.contains('travel')) {
+      return Icons.train_outlined;
+    }
+
+    if (normalized.contains('restaurant') || normalized.contains('pizza')) {
+      return Icons.restaurant_outlined;
+    }
+
+    return Icons.shopping_basket_outlined;
   }
 
   void showMessage(BuildContext context, String text) {

@@ -17,6 +17,18 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int selectedIndex = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      context.read<ReceiptProvider>().syncWithBackend();
+    });
+  }
+
   Widget buildCurrentPage() {
     if (selectedIndex == 0) {
       return HomeView(onAddReceipt: () => showAddReceiptOptions(context));

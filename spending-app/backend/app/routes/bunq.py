@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from psycopg import Connection
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.routes.auth import get_current_user
@@ -8,25 +9,24 @@ from app.services.bunq_client import BunqClient
 router = APIRouter(prefix="/bunq", tags=["bunq"])
 
 
-def get_general_category_id(db: Connection, name: str) -> int | None:
-    with db.cursor() as cur:
-        cur.execute(
+def get_general_category_id(db: Session, name: str) -> int | None:
+    row = db.execute(
+        text(
             """
             SELECT id
             FROM general_categories
-            WHERE name = %s
+            WHERE name = :name
             LIMIT 1;
-            """,
-            (name,),
-        )
-
-        row = cur.fetchone()
+            """
+        ),
+        {"name": name},
+    ).mappings().first()
 
     if row:
         return row["id"]
 
-    with db.cursor() as cur:
-        cur.execute(
+    fallback = db.execute(
+        text(
             """
             SELECT id
             FROM general_categories
@@ -34,8 +34,7 @@ def get_general_category_id(db: Connection, name: str) -> int | None:
             LIMIT 1;
             """
         )
-
-        fallback = cur.fetchone()
+    ).mappings().first()
 
     return fallback["id"] if fallback else None
 
@@ -137,7 +136,7 @@ def create_demo_spending():
 
 @router.post("/transactions/sync")
 def sync_bunq_transactions(
-    db: Connection = Depends(get_db),
+    db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     try:
@@ -147,25 +146,25 @@ def sync_bunq_transactions(
         inserted_count = 0
         skipped_count = 0
 
-        with db.cursor() as cur:
-            for payment in payments:
-                bunq_payment_id = str(payment.get("id"))
-                amount, currency = get_payment_amount(payment)
-                merchant = get_payment_merchant(payment)
-                description = payment.get("description")
-                transaction_date = get_payment_date(payment)
+        for payment in payments:
+            bunq_payment_id = str(payment.get("id"))
+            amount, currency = get_payment_amount(payment)
+            merchant = get_payment_merchant(payment)
+            description = payment.get("description")
+            transaction_date = get_payment_date(payment)
 
-                if not transaction_date:
-                    skipped_count += 1
-                    continue
+            if not transaction_date:
+                skipped_count += 1
+                continue
 
-                general_category_name = get_bunq_general_category(payment)
-                general_category_id = get_general_category_id(
-                    db,
-                    general_category_name,
-                )
+            general_category_name = get_bunq_general_category(payment)
+            general_category_id = get_general_category_id(
+                db,
+                general_category_name,
+            )
 
-                cur.execute(
+            row = db.execute(
+                text(
                     """
                     INSERT INTO transactions (
                         user_id,
@@ -177,29 +176,37 @@ def sync_bunq_transactions(
                         transaction_date,
                         general_category_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        :user_id,
+                        :bunq_payment_id,
+                        :amount,
+                        :currency,
+                        :merchant,
+                        :description,
+                        :transaction_date,
+                        :general_category_id
+                    )
                     ON CONFLICT (user_id, bunq_payment_id)
                     DO NOTHING
                     RETURNING id;
-                    """,
-                    (
-                        user["id"],
-                        bunq_payment_id,
-                        amount,
-                        currency,
-                        merchant,
-                        description,
-                        transaction_date,
-                        general_category_id,
-                    ),
-                )
+                    """
+                ),
+                {
+                    "user_id": user["id"],
+                    "bunq_payment_id": bunq_payment_id,
+                    "amount": amount,
+                    "currency": currency,
+                    "merchant": merchant,
+                    "description": description,
+                    "transaction_date": transaction_date,
+                    "general_category_id": general_category_id,
+                },
+            ).mappings().first()
 
-                row = cur.fetchone()
-
-                if row:
-                    inserted_count += 1
-                else:
-                    skipped_count += 1
+            if row:
+                inserted_count += 1
+            else:
+                skipped_count += 1
 
         db.commit()
 

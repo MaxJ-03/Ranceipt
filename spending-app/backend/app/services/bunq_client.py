@@ -25,6 +25,8 @@ class BunqClient:
 
         self.base_url = BUNQ_API_BASE_URL
         self.api_key = BUNQ_SANDBOX_API_KEY
+        if not self.api_key:
+            raise RuntimeError("BUNQ_SANDBOX_API_KEY is missing from backend/.env")
 
         self.private_key_pem, self.public_key_pem = self._load_or_create_keypair()
         self.device_token = self._load_device_token()

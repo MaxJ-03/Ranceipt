@@ -7,6 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routes.auth import get_current_user
 from app.receipts.repository import ReceiptRepository
 from app.receipts.schemas import ReceiptParseResponse
 from app.receipts.service import ReceiptPipeline
@@ -107,8 +108,8 @@ async def parse_receipt(
 @router.post("/parse", response_model=ReceiptParseResponse)
 async def parse_and_save_receipt(
 	image: UploadFile = File(...),
-	user_id: int = Form(...),
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ) -> ReceiptParseResponse:
 	"""
 	Person 2 endpoint:
@@ -124,7 +125,7 @@ async def parse_and_save_receipt(
 
 	resolved_transaction_id = find_best_transaction_id(
 		db,
-		user_id=user_id,
+		user_id=user["id"],
 		receipt_total=parsed.receipt_total,
 		receipt_date=parsed.timestamp,
 		merchant=parsed.merchant,
@@ -133,7 +134,7 @@ async def parse_and_save_receipt(
 
 	saved = repository.save_parsed_receipt(
 		db,
-		user_id=user_id,
+		user_id=user["id"],
 		transaction_id=resolved_transaction_id,
 		parsed_receipt=parsed,
 	)
@@ -147,6 +148,7 @@ async def parse_and_save_receipt(
 def create_receipt(
 	body: ReceiptCreate,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	"""
 	Manual/database endpoint:
@@ -161,10 +163,14 @@ def create_receipt(
 				SELECT id
 				FROM transactions
 				WHERE id = :transaction_id
+				  AND user_id = :user_id
 				LIMIT 1;
 				"""
 			),
-			{"transaction_id": body.transaction_id},
+			{
+				"transaction_id": body.transaction_id,
+				"user_id": user["id"],
+			},
 		).mappings().first()
 
 		if not transaction:
@@ -194,7 +200,7 @@ def create_receipt(
 				"""
 			),
 			{
-				"user_id": 1,  # temporary until this endpoint uses auth/session
+				"user_id": user["id"],
 				"transaction_id": body.transaction_id,
 				"merchant": body.merchant,
 				"total_amount": body.total_amount,
@@ -240,6 +246,7 @@ def create_receipt(
 @router.get("/")
 def get_receipts(
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	rows = db.execute(
 		text(
@@ -258,10 +265,12 @@ def get_receipts(
 			FROM receipts r
 			LEFT JOIN receipt_items ri
 				ON ri.receipt_id = r.id
+			WHERE r.user_id = :user_id
 			GROUP BY r.id
 			ORDER BY r.created_at DESC;
 			"""
-		)
+		),
+		{"user_id": user["id"]},
 	).all()
 
 	return rows_to_dicts(rows)
@@ -273,6 +282,7 @@ def find_receipt_transaction_candidates(
 	receipt_date: Optional[datetime] = Query(default=None),
 	merchant: Optional[str] = Query(default=None),
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	rows = db.execute(
 		text(
@@ -290,7 +300,8 @@ def find_receipt_transaction_candidates(
 			FROM transactions t
 			LEFT JOIN general_categories gc
 				ON gc.id = t.general_category_id
-			WHERE ABS(ABS(t.amount) - :total_amount) <= 0.50
+			WHERE t.user_id = :user_id
+			  AND ABS(ABS(t.amount) - :total_amount) <= 0.50
 			  AND (
 					:receipt_date IS NULL
 					OR ABS(EXTRACT(EPOCH FROM (t.transaction_date - CAST(:receipt_date AS timestamptz)))) <= 172800
@@ -305,6 +316,7 @@ def find_receipt_transaction_candidates(
 			"""
 		),
 		{
+			"user_id": user["id"],
 			"total_amount": total_amount,
 			"receipt_date": receipt_date,
 			"merchant": merchant,
@@ -319,11 +331,31 @@ def find_receipt_transaction_candidates(
 def get_saved_receipt(
 	receipt_id: int,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ) -> ReceiptParseResponse:
 	"""
 	Person 2 endpoint:
 	Returns saved parsed receipt using their repository format.
 	"""
+	owned = db.execute(
+		text(
+			"""
+			SELECT id
+			FROM receipts
+			WHERE id = :receipt_id
+			  AND user_id = :user_id
+			LIMIT 1;
+			"""
+		),
+		{
+			"receipt_id": receipt_id,
+			"user_id": user["id"],
+		},
+	).mappings().first()
+
+	if not owned:
+		raise HTTPException(status_code=404, detail="Receipt not found")
+
 	receipt = repository.get_parsed_receipt_by_id(db, receipt_id)
 
 	if receipt is None:
@@ -336,6 +368,7 @@ def get_saved_receipt(
 def get_receipt_detail(
 	receipt_id: int,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	receipt = db.execute(
 		text(
@@ -351,10 +384,14 @@ def get_receipt_detail(
 				created_at
 			FROM receipts
 			WHERE id = :receipt_id
+			  AND user_id = :user_id
 			LIMIT 1;
 			"""
 		),
-		{"receipt_id": receipt_id},
+		{
+			"receipt_id": receipt_id,
+			"user_id": user["id"],
+		},
 	).mappings().first()
 
 	if not receipt:
@@ -392,6 +429,7 @@ def link_receipt_to_transaction(
 	receipt_id: int,
 	transaction_id: int,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	receipt = db.execute(
 		text(
@@ -399,10 +437,14 @@ def link_receipt_to_transaction(
 			SELECT id
 			FROM receipts
 			WHERE id = :receipt_id
+			  AND user_id = :user_id
 			LIMIT 1;
 			"""
 		),
-		{"receipt_id": receipt_id},
+		{
+			"receipt_id": receipt_id,
+			"user_id": user["id"],
+		},
 	).mappings().first()
 
 	if not receipt:
@@ -414,10 +456,14 @@ def link_receipt_to_transaction(
 			SELECT id
 			FROM transactions
 			WHERE id = :transaction_id
+			  AND user_id = :user_id
 			LIMIT 1;
 			"""
 		),
-		{"transaction_id": transaction_id},
+		{
+			"transaction_id": transaction_id,
+			"user_id": user["id"],
+		},
 	).mappings().first()
 
 	if not transaction:
@@ -451,6 +497,7 @@ def link_receipt_to_transaction(
 def unlink_receipt_from_transaction(
 	receipt_id: int,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	updated = db.execute(
 		text(
@@ -458,10 +505,14 @@ def unlink_receipt_from_transaction(
 			UPDATE receipts
 			SET transaction_id = NULL
 			WHERE id = :receipt_id
+			  AND user_id = :user_id
 			RETURNING id;
 			"""
 		),
-		{"receipt_id": receipt_id},
+		{
+			"receipt_id": receipt_id,
+			"user_id": user["id"],
+		},
 	).mappings().first()
 
 	db.commit()
@@ -479,16 +530,21 @@ def unlink_receipt_from_transaction(
 def delete_receipt(
 	receipt_id: int,
 	db: Session = Depends(get_db),
+	user=Depends(get_current_user),
 ):
 	deleted = db.execute(
 		text(
 			"""
 			DELETE FROM receipts
 			WHERE id = :receipt_id
+			  AND user_id = :user_id
 			RETURNING id;
 			"""
 		),
-		{"receipt_id": receipt_id},
+		{
+			"receipt_id": receipt_id,
+			"user_id": user["id"],
+		},
 	).mappings().first()
 
 	db.commit()

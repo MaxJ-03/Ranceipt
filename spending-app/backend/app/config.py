@@ -11,6 +11,3 @@ BUNQ_SANDBOX_API_KEY = os.getenv("BUNQ_SANDBOX_API_KEY")
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is missing from backend/.env")
-
-if not BUNQ_SANDBOX_API_KEY:
-    raise RuntimeError("BUNQ_SANDBOX_API_KEY is missing from backend/.env")

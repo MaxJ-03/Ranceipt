@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+
 import '../models/receipt.dart';
+import '../services/backend_api.dart';
 
 class ReceiptProvider extends ChangeNotifier {
   List<Receipt> _receipts = [];
+  final BackendApi _backendApi = BackendApi();
+  bool _didAttemptBackendSync = false;
+  bool _isSyncingBackend = false;
+  String? _backendSyncError;
 
   List<Receipt> get receipts => _receipts;
+  bool get isSyncingBackend => _isSyncingBackend;
+  String? get backendSyncError => _backendSyncError;
 
   // Percentile data for each item category (simulated global comparison)
   final Map<String, double> _categoryPercentiles = {
@@ -68,6 +76,80 @@ class ReceiptProvider extends ChangeNotifier {
 
   ReceiptProvider() {
     _initializeMockData();
+  }
+
+  Future<void> syncWithBackend() async {
+    if (_didAttemptBackendSync || _isSyncingBackend) {
+      return;
+    }
+
+    _isSyncingBackend = true;
+    notifyListeners();
+
+    try {
+      final transactions = await _backendApi.getTransactions();
+      final mappedReceipts = transactions
+          .map(_mapTransactionToReceipt)
+          .whereType<Receipt>()
+          .toList();
+
+      if (mappedReceipts.isNotEmpty) {
+        _receipts = mappedReceipts;
+      }
+
+      _backendSyncError = null;
+    } catch (e) {
+      _backendSyncError = e.toString();
+    } finally {
+      _didAttemptBackendSync = true;
+      _isSyncingBackend = false;
+      notifyListeners();
+    }
+  }
+
+  Receipt? _mapTransactionToReceipt(Map<String, dynamic> transaction) {
+    final id = transaction['id']?.toString();
+    if (id == null || id.isEmpty) {
+      return null;
+    }
+
+    final merchant =
+        transaction['merchant']?.toString() ??
+        transaction['description']?.toString() ??
+        'Unknown merchant';
+    final description = transaction['description']?.toString() ?? merchant;
+    final category = transaction['general_category']?.toString();
+    final amount = _toDouble(transaction['amount']).abs();
+    final date = DateTime.tryParse(
+          transaction['transaction_date']?.toString() ?? '',
+        ) ??
+        DateTime.now();
+
+    return Receipt(
+      id: id,
+      storeName: merchant,
+      date: date,
+      total: amount,
+      lineItems: [
+        ReceiptLineItem(
+          id: 'line-$id',
+          name: description,
+          detailedCategory: category,
+          price: amount,
+          quantity: 1,
+          isCategorized: category != null,
+        ),
+      ],
+      isProcessed: true,
+    );
+  }
+
+  double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   void _initializeMockData() {
