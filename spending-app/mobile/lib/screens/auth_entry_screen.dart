@@ -1,8 +1,6 @@
 import 'dart:async';
 
-import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/backend_api.dart';
 import '../theme/app_colors.dart';
@@ -17,115 +15,23 @@ class AuthEntryScreen extends StatefulWidget {
 
 class _AuthEntryScreenState extends State<AuthEntryScreen> {
   final BackendApi _backendApi = BackendApi();
-  final AppLinks _appLinks = AppLinks();
 
   bool _isCheckingSession = true;
   bool _hasValidSession = false;
   bool _isSigningIn = false;
   String? _errorText;
-  String? _pendingState;
-  StreamSubscription<Uri>? _linkSubscription;
 
   @override
   void initState() {
     super.initState();
-    _listenForOAuthCallback();
     _checkSession();
   }
 
   @override
   void dispose() {
-    _linkSubscription?.cancel();
     super.dispose();
   }
 
-  void _listenForOAuthCallback() {
-    _linkSubscription = _appLinks.uriLinkStream.listen(
-      (uri) {
-        _handleOAuthCallback(uri);
-      },
-      onError: (error) {
-        if (!mounted) {
-          return;
-        }
-
-        setState(() {
-          _isSigningIn = false;
-          _errorText = error.toString();
-        });
-      },
-    );
-  }
-
-  Future<void> _handleOAuthCallback(Uri uri) async {
-    if (!_isSigningIn) {
-      return;
-    }
-
-    if (uri.scheme != 'ranceipt') {
-      return;
-    }
-
-    final callbackPath = uri.host.isNotEmpty ? uri.host : uri.path.replaceFirst('/', '');
-    if (callbackPath != 'auth-callback') {
-      return;
-    }
-
-    final callbackState = uri.queryParameters['state'];
-    final code = uri.queryParameters['code'];
-    final error = uri.queryParameters['error'];
-
-    if (error != null && error.isNotEmpty) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isSigningIn = false;
-        _errorText = 'bunq sign-in failed: $error';
-      });
-      return;
-    }
-
-    if (callbackState == null || callbackState != _pendingState || code == null || code.isEmpty) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isSigningIn = false;
-        _errorText = 'Invalid OAuth callback payload.';
-      });
-      return;
-    }
-
-    try {
-      await _backendApi.completeBunqOAuthWithCode(
-        state: callbackState,
-        code: code,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _pendingState = null;
-        _hasValidSession = true;
-        _isSigningIn = false;
-        _errorText = null;
-      });
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isSigningIn = false;
-        _errorText = e.toString();
-      });
-    }
-  }
 
   Future<void> _checkSession() async {
     setState(() {
@@ -163,17 +69,17 @@ class _AuthEntryScreenState extends State<AuthEntryScreen> {
     });
 
     try {
-      final oauthStart = await _backendApi.startBunqOAuth();
-      _pendingState = oauthStart.state;
+      await _backendApi.loginWithBunqSandbox();
 
-      final launched = await launchUrl(
-        Uri.parse(oauthStart.authorizationUrl),
-        mode: LaunchMode.externalApplication,
-      );
-
-      if (!launched) {
-        throw Exception('Could not open bunq authorization URL');
+      if (!mounted) {
+        return;
       }
+
+      setState(() {
+        _hasValidSession = true;
+        _isSigningIn = false;
+        _errorText = null;
+      });
     } catch (e) {
       if (!mounted) {
         return;

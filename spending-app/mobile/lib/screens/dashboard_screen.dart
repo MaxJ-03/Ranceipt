@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/receipt.dart';
@@ -73,9 +74,9 @@ class DashboardScreenState extends State<DashboardScreen> {
                   title: 'Scan receipt',
                   subtitle: 'Use camera',
                   color: AppColors.aqua,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    showMessage(context, 'Camera scanning coming soon.');
+                    await _pickAndUploadReceipt(context, ImageSource.camera);
                   },
                 ),
                 const SizedBox(height: 10),
@@ -84,9 +85,9 @@ class DashboardScreenState extends State<DashboardScreen> {
                   title: 'Upload photo',
                   subtitle: 'Choose from gallery',
                   color: AppColors.primary,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    showMessage(context, 'Photo upload coming soon.');
+                    await _pickAndUploadReceipt(context, ImageSource.gallery);
                   },
                 ),
                 const SizedBox(height: 10),
@@ -95,9 +96,9 @@ class DashboardScreenState extends State<DashboardScreen> {
                   title: 'Manual entry',
                   subtitle: 'Add purchase manually',
                   color: AppColors.amber,
-                  onTap: () {
+                  onTap: () async {
                     Navigator.pop(context);
-                    showMessage(context, 'Manual entry coming soon.');
+                    await _openManualEntryDialog(context);
                   },
                 ),
               ],
@@ -127,6 +128,117 @@ class DashboardScreenState extends State<DashboardScreen> {
 
   void showMessage(BuildContext context, String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _pickAndUploadReceipt(BuildContext context, ImageSource source) async {
+    final picker = ImagePicker();
+    final provider = Provider.of<ReceiptProvider>(context, listen: false);
+
+    final image = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+    );
+
+    if (image == null || !context.mounted) {
+      return;
+    }
+
+    try {
+      await provider.uploadReceiptFromImage(image);
+      if (!context.mounted) {
+        return;
+      }
+      showMessage(context, 'Receipt uploaded and parsed with AI.');
+    } catch (e) {
+      if (!context.mounted) {
+        return;
+      }
+      showMessage(context, 'Receipt upload failed: $e');
+    }
+  }
+
+  Future<void> _openManualEntryDialog(BuildContext context) async {
+    final merchantController = TextEditingController();
+    final amountController = TextEditingController();
+    final provider = Provider.of<ReceiptProvider>(context, listen: false);
+
+    try {
+      final result = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            backgroundColor: AppColors.surface,
+            title: const Text(
+              'Manual receipt',
+              style: TextStyle(color: AppColors.text),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: merchantController,
+                  decoration: const InputDecoration(
+                    labelText: 'Merchant',
+                    hintText: 'Supermarket',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: amountController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Total amount',
+                    hintText: '24.90',
+                    prefixText: '€ ',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('Save'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (result != true || !context.mounted) {
+        return;
+      }
+
+      final merchant = merchantController.text.trim();
+      final amount = double.tryParse(amountController.text.trim().replaceAll(',', '.'));
+
+      if (merchant.isEmpty || amount == null || amount <= 0) {
+        showMessage(context, 'Enter a valid merchant and amount.');
+        return;
+      }
+
+      try {
+        await provider.addManualReceipt(
+          merchant: merchant,
+          totalAmount: amount,
+        );
+        if (!context.mounted) {
+          return;
+        }
+        showMessage(context, 'Manual receipt saved to database.');
+      } catch (e) {
+        if (!context.mounted) {
+          return;
+        }
+        showMessage(context, 'Manual receipt failed: $e');
+      }
+    } finally {
+      merchantController.dispose();
+      amountController.dispose();
+    }
   }
 
   @override
@@ -237,16 +349,33 @@ class DashboardHomeState extends State<DashboardHome> {
                       topCategory: topCategory,
                       goal: goal,
                       showAdvice: showAdvice,
+                      adviceText: analytics.aiAdvice,
+                      advicePotentialSavings: provider.aiPotentialSavings,
+                      isAdviceLoading: provider.isGeneratingAdvice,
                       onAddReceipt: widget.onAddReceipt,
-                      onGenerateAdvice: () {
+                      onGenerateAdvice: () async {
                         setState(() {
                           showAdvice = true;
                         });
+
+                        try {
+                          await provider.generateAiSavingsAdvice();
+                        } catch (_) {
+                          if (!context.mounted) {
+                            return;
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(provider.syncError ?? 'Could not generate AI advice.'),
+                            ),
+                          );
+                        }
                       },
                       onResetAdvice: () {
                         setState(() {
                           showAdvice = false;
                         });
+                        provider.clearAiAdvice();
                       },
                     ),
                     const SizedBox(height: 16),
@@ -350,6 +479,9 @@ class DashboardMainActionCard extends StatelessWidget {
   final ItemCategorySpending? topCategory;
   final PersonalGoal? goal;
   final bool showAdvice;
+  final String adviceText;
+  final double? advicePotentialSavings;
+  final bool isAdviceLoading;
   final VoidCallback onAddReceipt;
   final VoidCallback onGenerateAdvice;
   final VoidCallback onResetAdvice;
@@ -359,6 +491,9 @@ class DashboardMainActionCard extends StatelessWidget {
     required this.topCategory,
     required this.goal,
     required this.showAdvice,
+    required this.adviceText,
+    required this.advicePotentialSavings,
+    required this.isAdviceLoading,
     required this.onAddReceipt,
     required this.onGenerateAdvice,
     required this.onResetAdvice,
@@ -388,18 +523,20 @@ class DashboardMainActionCard extends StatelessWidget {
         ? categoryIcon(categoryName)
         : Icons.document_scanner_outlined;
 
-    String adviceText;
+    String fallbackAdviceText;
 
     if (!hasData) {
-      adviceText =
+      fallbackAdviceText =
           'Add a receipt first. Then AI advice can estimate where saving has the biggest impact.';
     } else if (!hasGoal) {
-      adviceText =
+      fallbackAdviceText =
           'Your biggest category is $categoryName. Set a savings goal to turn this into a concrete plan.';
     } else {
-      adviceText =
+      fallbackAdviceText =
           'Saving €${suggestedCut.toStringAsFixed(0)} from $categoryName would get you ${(progress * 100).toStringAsFixed(0)}% closer to your €${goal!.amountToSave.toStringAsFixed(0)} goal.';
     }
+
+    final effectiveAdviceText = adviceText.isNotEmpty ? adviceText : fallbackAdviceText;
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -466,7 +603,9 @@ class DashboardMainActionCard extends StatelessWidget {
                 child: SizedBox(
                   height: 52,
                   child: FilledButton.icon(
-                    onPressed: showAdvice ? onResetAdvice : onGenerateAdvice,
+                    onPressed: isAdviceLoading
+                        ? null
+                        : (showAdvice ? onResetAdvice : onGenerateAdvice),
                     icon: Icon(
                       showAdvice
                           ? Icons.refresh_rounded
@@ -531,13 +670,25 @@ class DashboardMainActionCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    adviceText,
+                    isAdviceLoading ? 'Generating AI savings suggestions...' : effectiveAdviceText,
                     style: const TextStyle(
                       color: AppColors.muted,
                       fontSize: 15,
                       height: 1.4,
                     ),
                   ),
+                  if (!isAdviceLoading && advicePotentialSavings != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        'Potential savings: €${advicePotentialSavings!.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          color: AppColors.aqua,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   if (hasData && hasGoal) const SizedBox(height: 16),
                   if (hasData && hasGoal)
                     ClipRRect(
@@ -889,7 +1040,7 @@ class DashboardAddGoalSheetState extends State<DashboardAddGoalSheet> {
     super.dispose();
   }
 
-  void saveGoal() {
+  Future<void> saveGoal() async {
     final amount = double.tryParse(amountController.text.replaceAll(',', '.'));
 
     if (amount == null || amount <= 0) {
@@ -899,12 +1050,24 @@ class DashboardAddGoalSheetState extends State<DashboardAddGoalSheet> {
       return;
     }
 
-    widget.provider.addPersonalGoal(
-      amountToSave: amount,
-      targetDate: DateTime.now().add(Duration(days: selectedDays)),
-    );
+    try {
+      await widget.provider.addPersonalGoal(
+        amountToSave: amount,
+        targetDate: DateTime.now().add(Duration(days: selectedDays)),
+      );
 
-    Navigator.pop(context);
+      if (!mounted) {
+        return;
+      }
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Goal creation failed: $e')),
+      );
+    }
   }
 
   void setDays(int days) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../models/receipt.dart';
@@ -28,11 +29,11 @@ class ReceiptListScreen extends StatelessWidget {
                       const ReceiptHeader(),
                       const SizedBox(height: 24),
                       ReceiptActionPanel(
-                        onScan: () {
-                          showMessage(context, 'Camera scanning coming soon.');
+                        onScan: () async {
+                          await _pickAndUploadReceipt(context, ImageSource.camera);
                         },
-                        onUpload: () {
-                          showMessage(context, 'Upload coming soon.');
+                        onUpload: () async {
+                          await _pickAndUploadReceipt(context, ImageSource.gallery);
                         },
                       ),
                       const SizedBox(height: 32),
@@ -114,6 +115,33 @@ class ReceiptListScreen extends StatelessWidget {
 
   void showMessage(BuildContext context, String text) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _pickAndUploadReceipt(BuildContext context, ImageSource source) async {
+    final picker = ImagePicker();
+    final provider = Provider.of<ReceiptProvider>(context, listen: false);
+
+    final image = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+    );
+
+    if (image == null || !context.mounted) {
+      return;
+    }
+
+    try {
+      await provider.uploadReceiptFromImage(image);
+      if (!context.mounted) {
+        return;
+      }
+      showMessage(context, 'Receipt uploaded and parsed with AI.');
+    } catch (e) {
+      if (!context.mounted) {
+        return;
+      }
+      showMessage(context, 'Receipt upload failed: $e');
+    }
   }
 
   void showReceiptDetails(BuildContext context, Receipt receipt) {
